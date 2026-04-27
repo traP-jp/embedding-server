@@ -1,0 +1,46 @@
+[tools]
+python = "3.12"
+uv = "0.11"
+
+[tasks.oapi-gen]
+description = "Regenerate server/api/openapi.gen.go (go generate ./api)"
+dir = "server"
+run = "go generate ./api"
+
+[tasks.build]
+description = "docker compose build (all services)"
+run = "docker compose build"
+
+[tasks.test-sqlite]
+description = "SQLite 書き込み検証（glebarez + GORM、CGO off）"
+dir = "server"
+run = "CGO_ENABLED=0 go test -count=1 -v -run TestGORMGlebarezSQLiteReadWrite ."
+
+[tasks.verify-compose]
+description = "孤立 project emb-verify で up --build → curl /healthz が ok になるまで待つ"
+run = "COMPOSE_PROJECT_NAME=emb-verify docker compose -f compose.yaml down -v 2>/dev/null; COMPOSE_PROJECT_NAME=emb-verify API_PORT=18099 docker compose -f compose.yaml up --build -d && for i in $(seq 1 45); do curl -sf http://127.0.0.1:18099/healthz | grep -qx ok && break; sleep 1; done; curl -sf http://127.0.0.1:18099/healthz"
+
+[tasks.up]
+description = "Build and start stack (Docker Compose)"
+run = "docker compose up --build"
+
+[tasks.down]
+description = "Stop stack"
+run = "docker compose down"
+
+[tasks.logs]
+description = "Follow compose logs"
+run = "docker compose logs -f"
+
+[tasks.api-shell]
+description = "API は distroless で sh がないのでログを tail"
+run = "docker compose logs -f api"
+
+[tasks.worker-shell]
+description = "Shell in worker container (bash)"
+run = "docker compose exec worker bash"
+
+[tasks.worker-lock]
+description = "Refresh worker/uv.lock (host uv)"
+dir = "worker"
+run = "uv lock"
