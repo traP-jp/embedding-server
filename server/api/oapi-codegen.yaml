@@ -1,7 +1,0 @@
-# oapi-codegen: https://github.com/oapi-codegen/oapi-codegen
-# 再生成: mise run oapi-gen または cd server && go generate ./api
-package: api
-output: openapi.gen.go
-generate:
-  models: true
-  echo-server: true

@@ -1,0 +1,4 @@
+package: api
+output: api/openapi.model.gen.go
+generate:
+  models: true

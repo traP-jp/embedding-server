@@ -1,11 +1,15 @@
 [tools]
 python = "3.12"
 uv = "0.11"
+oapi-codegen = "2.6.0"
 
 [tasks.oapi-gen]
 description = "openapiからのコード生成"
 dir = "server"
-run = "go generate ./api"
+run = [
+    "oapi-codegen -config ./api/oapi.model.config.yaml ../openapi.yaml",
+    "oapi-codegen -config ./api/oapi.interface.config.yaml ../openapi.yaml",
+]
 
 [tasks.up]
 description = "docker compose up --build"

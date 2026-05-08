@@ -1,0 +1,393 @@
+---
+openapi: 3.0.3
+
+info:
+    title: embedding-server API
+    version: 0.1.0
+    description: |
+        マルチモーダル埋め込み用のジョブキュー API。
+        テキスト単体・画像単体・テキスト＋画像ペアを受け付ける。
+        同一テキストの埋め込み結果はサーバー内部でキャッシュされる。
+
+servers:
+    - url: http://localhost:8080
+      description: 開発環境
+
+tags:
+    - name: embeddings
+      description: テキスト・画像・テキスト＋画像から埋め込みジョブをキューへ載せる
+    - name: internal-worker
+      description: 内部で動いているワーカー用
+
+paths:
+    /v1/embeddings/text:
+        post:
+            operationId: postEmbeddingsText
+            tags: [embeddings]
+            summary: テキストの埋め込みベクトルを返す
+            description: |
+                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+                同一テキストはサーバー内部でキャッシュされ、キャッシュヒット時は即時返却。
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [text]
+                            properties:
+                                text:
+                                    $ref: "#/components/schemas/EmbeddingText"
+            responses:
+                "200":
+                    description: 埋め込みベクトル
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/EmbeddingResult"
+                "400":
+                    description: テキストが無効、または JSON が不正です
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "503":
+                    description: キューが満杯です。しばらく待ってから再送してください
+                    headers:
+                        Retry-After:
+                            description: 推奨リトライ待機秒数
+                            schema:
+                                type: integer
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "504":
+                    description: ジョブ処理がタイムアウトしました
+                    content:
+                      application/json:
+                        schema:
+                          $ref: "#/components/schemas/ErrorResponse"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+    /v1/embeddings/image:
+        post:
+            operationId: postEmbeddingsImage
+            tags: [embeddings]
+            summary: 画像の埋め込みベクトルを返す
+            description: |
+                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            required: [image]
+                            properties:
+                                image:
+                                    $ref: "#/components/schemas/EmbeddingImageFile"
+            responses:
+                "200":
+                    description: 埋め込みベクトル
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/EmbeddingResult"
+                "400":
+                    description: multipart または image フィールドが不正です
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "413":
+                    description: アップロードサイズが上限を超えています
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "503":
+                    description: キューが満杯です。しばらく待ってから再送してください
+                    headers:
+                        Retry-After:
+                            description: 推奨リトライ待機秒数
+                            schema:
+                                type: integer
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "504":
+                    description: ジョブ処理がタイムアウトしました
+                    content:
+                      application/json:
+                        schema:
+                          $ref: "#/components/schemas/ErrorResponse"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+    /v1/embeddings/text-image:
+        post:
+            operationId: postEmbeddingsTextImage
+            tags: [embeddings]
+            summary: テキストと画像を合わせた埋め込みベクトルを返す
+            description: |
+                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            required: [text, image]
+                            properties:
+                                text:
+                                    $ref: "#/components/schemas/EmbeddingText"
+                                image:
+                                    $ref: "#/components/schemas/EmbeddingImageFile"
+            responses:
+                "200":
+                    description: 埋め込みベクトル
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/EmbeddingResult"
+                "400":
+                    description: text・image の指定が不正です
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "413":
+                    description: アップロードサイズが上限を超えています
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "503":
+                    description: キューが満杯です。しばらく待ってから再送してください
+                    headers:
+                        Retry-After:
+                            description: 推奨リトライ待機秒数
+                            schema:
+                                type: integer
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "504":
+                    description: ジョブ処理がタイムアウトしました
+                    content:
+                      application/json:
+                        schema:
+                          $ref: "#/components/schemas/ErrorResponse"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+    /internal/worker/jobs/claim:
+        post:
+            operationId: postInternalWorkerJobsClaim
+            tags: [internal-worker]
+            summary: 次の pending ジョブをロックして取得
+            description: |
+                キュー内で最古の pending を processing にし、id と payload を返す。
+                ジョブが無い場合は 204。
+            responses:
+                "200":
+                    description: ジョブあり
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required: [id, payload]
+                                properties:
+                                    id:
+                                        type: integer
+                                        format: int64
+                                    payload:
+                                        $ref: "#/components/schemas/WorkerJobPayload"
+                "204":
+                    $ref: "#/components/responses/NoContent"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+    /internal/worker/jobs/{id}/complete:
+        post:
+            operationId: postInternalWorkerJobsIdComplete
+            tags: [internal-worker]
+            summary: ジョブを完了にする
+            parameters:
+                - $ref: "#/components/parameters/JobId"
+            requestBody:
+                description: |
+                    worker が計算した埋め込み結果を返す。
+                    テキスト埋め込みジョブの場合、サーバーはこの結果を対応するキーでキャッシュへ保存する。
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [result]
+                            properties:
+                                result:
+                                    $ref: "#/components/schemas/EmbeddingResult"
+            responses:
+                "204":
+                    $ref: "#/components/responses/NoContent"
+                "400":
+                    description: リクエストが不正です
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "404":
+                    description: 指定したジョブが見つかりません
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+    /internal/worker/jobs/{id}/fail:
+        post:
+            operationId: postInternalWorkerJobsIdFail
+            tags: [internal-worker]
+            summary: ジョブを失敗にする
+            parameters:
+                - $ref: "#/components/parameters/JobId"
+            responses:
+                "204":
+                    $ref: "#/components/responses/NoContent"
+                "400":
+                    description: リクエストが不正です
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "404":
+                    description: 指定したジョブが見つかりません
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+                "500":
+                    description: サーバー内部エラー
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+    parameters:
+        JobId:
+            name: id
+            in: path
+            required: true
+            schema:
+                type: integer
+                format: int64
+
+    responses:
+        NoContent:
+            description: No Content
+
+    schemas:
+        ErrorResponse:
+            type: object
+            required: [message]
+            properties:
+                message:
+                    type: string
+                    description: エラーメッセージ
+
+        EmbeddingResult:
+            type: object
+            required: [vector]
+            properties:
+                vector:
+                    type: array
+                    items:
+                        type: number
+                        format: float
+                    description: 正規化済みの埋め込みベクトル
+
+        EmbeddingText:
+            type: string
+            maxLength: 8192
+            description: 埋め込みに用いるテキスト
+
+        EmbeddingImageFile:
+            type: string
+            format: binary
+            description: 埋め込みに用いる画像バイナリ
+
+        EmbeddingImagePath:
+            type: string
+            description: worker が参照するローカルファイルパス
+
+        WorkerJobPayload:
+            description: worker が処理するジョブ内容
+            oneOf:
+                - $ref: "#/components/schemas/TextEmbeddingJobPayload"
+                - $ref: "#/components/schemas/ImageEmbeddingJobPayload"
+                - $ref: "#/components/schemas/TextImageEmbeddingJobPayload"
+            discriminator:
+                propertyName: kind
+                mapping:
+                    text: "#/components/schemas/TextEmbeddingJobPayload"
+                    image: "#/components/schemas/ImageEmbeddingJobPayload"
+                    text_image: "#/components/schemas/TextImageEmbeddingJobPayload"
+
+        TextEmbeddingJobPayload:
+            type: object
+            required: [kind, text]
+            properties:
+                kind:
+                    type: string
+                    enum: [text]
+                text:
+                    $ref: "#/components/schemas/EmbeddingText"
+
+        ImageEmbeddingJobPayload:
+            type: object
+            required: [kind, image_path]
+            properties:
+                kind:
+                    type: string
+                    enum: [image]
+                image_path:
+                    $ref: "#/components/schemas/EmbeddingImagePath"
+
+        TextImageEmbeddingJobPayload:
+            type: object
+            required: [kind, text, image_path]
+            properties:
+                kind:
+                    type: string
+                    enum: [text_image]
+                text:
+                    $ref: "#/components/schemas/EmbeddingText"
+                image_path:
+                    $ref: "#/components/schemas/EmbeddingImagePath"
