@@ -5,7 +5,7 @@ info:
     title: embedding-server API
     version: 0.1.0
     description: |
-        マルチモーダル埋め込み用のジョブキュー API。
+        マルチモーダル埋め込み用のジョブ管理 API。
         テキスト単体・画像単体・テキスト＋画像ペアを受け付ける。
         同一テキストの埋め込み結果はサーバー内部でキャッシュされる。
 
@@ -15,7 +15,7 @@ servers:
 
 tags:
     - name: embeddings
-      description: テキスト・画像・テキスト＋画像から埋め込みジョブをキューへ載せる
+      description: テキスト・画像・テキスト＋画像から埋め込みジョブを作成する
     - name: internal-worker
       description: 内部で動いているワーカー用
 
@@ -26,7 +26,7 @@ paths:
             tags: [embeddings]
             summary: テキストの埋め込みベクトルを返す
             description: |
-                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+                ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
                 同一テキストはサーバー内部でキャッシュされ、キャッシュヒット時は即時返却。
             requestBody:
                 required: true
@@ -52,7 +52,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
                 "503":
-                    description: キューが満杯です。しばらく待ってから再送してください
+                    description: ジョブを受け付けられません。しばらく待ってから再送してください
                     headers:
                         Retry-After:
                             description: 推奨リトライ待機秒数
@@ -81,7 +81,7 @@ paths:
             tags: [embeddings]
             summary: 画像の埋め込みベクトルを返す
             description: |
-                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+                ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
             requestBody:
                 required: true
                 content:
@@ -112,7 +112,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
                 "503":
-                    description: キューが満杯です。しばらく待ってから再送してください
+                    description: ジョブを受け付けられません。しばらく待ってから再送してください
                     headers:
                         Retry-After:
                             description: 推奨リトライ待機秒数
@@ -141,7 +141,7 @@ paths:
             tags: [embeddings]
             summary: テキストと画像を合わせた埋め込みベクトルを返す
             description: |
-                ジョブをキューに載せ、処理完了まで待機してから埋め込みベクトルを返す。
+                ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
             requestBody:
                 required: true
                 content:
@@ -174,7 +174,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
                 "503":
-                    description: キューが満杯です。しばらく待ってから再送してください
+                    description: ジョブを受け付けられません。しばらく待ってから再送してください
                     headers:
                         Retry-After:
                             description: 推奨リトライ待機秒数
@@ -203,7 +203,7 @@ paths:
             tags: [internal-worker]
             summary: 次の pending ジョブをロックして取得
             description: |
-                キュー内で最古の pending を processing にし、id と payload を返す。
+                DB 内で最古の pending ジョブを processing にし、id と payload を返す。
                 ジョブが無い場合は 204。
             responses:
                 "200":
