@@ -1,1 +1,4 @@
 .git
+tmp
+data
+build-errors.log

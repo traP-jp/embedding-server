@@ -8,6 +8,7 @@ wheels/
 
 # Local secrets / overrides for docker compose
 .env
+tmp/
 
 # Virtual environments
 .venv
