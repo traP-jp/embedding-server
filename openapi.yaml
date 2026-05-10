@@ -199,7 +199,7 @@ paths:
 
     /internal/worker/jobs/claim:
         post:
-            operationId: postInternalWorkerJobsClaim
+            operationId: claimWorkerJob
             tags: [internal-worker]
             summary: 次の pending ジョブをロックして取得
             description: |
@@ -230,7 +230,7 @@ paths:
 
     /internal/worker/jobs/{id}/complete:
         post:
-            operationId: postInternalWorkerJobsIdComplete
+            operationId: completeWorkerJob
             tags: [internal-worker]
             summary: ジョブを完了にする
             parameters:
@@ -272,7 +272,7 @@ paths:
 
     /internal/worker/jobs/{id}/fail:
         post:
-            operationId: postInternalWorkerJobsIdFail
+            operationId: failWorkerJob
             tags: [internal-worker]
             summary: ジョブを失敗にする
             parameters:

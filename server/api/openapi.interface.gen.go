@@ -19,13 +19,13 @@ import (
 type ServerInterface interface {
 	// 次の pending ジョブをロックして取得
 	// (POST /internal/worker/jobs/claim)
-	PostInternalWorkerJobsClaim(ctx echo.Context) error
+	ClaimWorkerJob(ctx echo.Context) error
 	// ジョブを完了にする
 	// (POST /internal/worker/jobs/{id}/complete)
-	PostInternalWorkerJobsIdComplete(ctx echo.Context, id JobId) error
+	CompleteWorkerJob(ctx echo.Context, id JobId) error
 	// ジョブを失敗にする
 	// (POST /internal/worker/jobs/{id}/fail)
-	PostInternalWorkerJobsIdFail(ctx echo.Context, id JobId) error
+	FailWorkerJob(ctx echo.Context, id JobId) error
 	// 画像の埋め込みベクトルを返す
 	// (POST /v1/embeddings/image)
 	PostEmbeddingsImage(ctx echo.Context) error
@@ -42,17 +42,17 @@ type ServerInterfaceWrapper struct {
 	Handler ServerInterface
 }
 
-// PostInternalWorkerJobsClaim converts echo context to params.
-func (w *ServerInterfaceWrapper) PostInternalWorkerJobsClaim(ctx echo.Context) error {
+// ClaimWorkerJob converts echo context to params.
+func (w *ServerInterfaceWrapper) ClaimWorkerJob(ctx echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.PostInternalWorkerJobsClaim(ctx)
+	err = w.Handler.ClaimWorkerJob(ctx)
 	return err
 }
 
-// PostInternalWorkerJobsIdComplete converts echo context to params.
-func (w *ServerInterfaceWrapper) PostInternalWorkerJobsIdComplete(ctx echo.Context) error {
+// CompleteWorkerJob converts echo context to params.
+func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id JobId
@@ -63,12 +63,12 @@ func (w *ServerInterfaceWrapper) PostInternalWorkerJobsIdComplete(ctx echo.Conte
 	}
 
 	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.PostInternalWorkerJobsIdComplete(ctx, id)
+	err = w.Handler.CompleteWorkerJob(ctx, id)
 	return err
 }
 
-// PostInternalWorkerJobsIdFail converts echo context to params.
-func (w *ServerInterfaceWrapper) PostInternalWorkerJobsIdFail(ctx echo.Context) error {
+// FailWorkerJob converts echo context to params.
+func (w *ServerInterfaceWrapper) FailWorkerJob(ctx echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id JobId
@@ -79,7 +79,7 @@ func (w *ServerInterfaceWrapper) PostInternalWorkerJobsIdFail(ctx echo.Context) 
 	}
 
 	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.PostInternalWorkerJobsIdFail(ctx, id)
+	err = w.Handler.FailWorkerJob(ctx, id)
 	return err
 }
 
@@ -157,9 +157,9 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 		Handler: si,
 	}
 
-	router.POST(options.BaseURL+"/internal/worker/jobs/claim", wrapper.PostInternalWorkerJobsClaim, options.OperationMiddlewares["postInternalWorkerJobsClaim"]...)
-	router.POST(options.BaseURL+"/internal/worker/jobs/:id/complete", wrapper.PostInternalWorkerJobsIdComplete, options.OperationMiddlewares["postInternalWorkerJobsIdComplete"]...)
-	router.POST(options.BaseURL+"/internal/worker/jobs/:id/fail", wrapper.PostInternalWorkerJobsIdFail, options.OperationMiddlewares["postInternalWorkerJobsIdFail"]...)
+	router.POST(options.BaseURL+"/internal/worker/jobs/claim", wrapper.ClaimWorkerJob, options.OperationMiddlewares["claimWorkerJob"]...)
+	router.POST(options.BaseURL+"/internal/worker/jobs/:id/complete", wrapper.CompleteWorkerJob, options.OperationMiddlewares["completeWorkerJob"]...)
+	router.POST(options.BaseURL+"/internal/worker/jobs/:id/fail", wrapper.FailWorkerJob, options.OperationMiddlewares["failWorkerJob"]...)
 	router.POST(options.BaseURL+"/v1/embeddings/image", wrapper.PostEmbeddingsImage, options.OperationMiddlewares["postEmbeddingsImage"]...)
 	router.POST(options.BaseURL+"/v1/embeddings/text", wrapper.PostEmbeddingsText, options.OperationMiddlewares["postEmbeddingsText"]...)
 	router.POST(options.BaseURL+"/v1/embeddings/text-image", wrapper.PostEmbeddingsTextImage, options.OperationMiddlewares["postEmbeddingsTextImage"]...)
@@ -169,21 +169,21 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 type NoContentResponse struct {
 }
 
-type PostInternalWorkerJobsClaimRequestObject struct {
+type ClaimWorkerJobRequestObject struct {
 }
 
-type PostInternalWorkerJobsClaimResponseObject interface {
-	VisitPostInternalWorkerJobsClaimResponse(w http.ResponseWriter) error
+type ClaimWorkerJobResponseObject interface {
+	VisitClaimWorkerJobResponse(w http.ResponseWriter) error
 }
 
-type PostInternalWorkerJobsClaim200JSONResponse struct {
+type ClaimWorkerJob200JSONResponse struct {
 	Id int64 `json:"id"`
 
 	// Payload worker が処理するジョブ内容
 	Payload WorkerJobPayload `json:"payload"`
 }
 
-func (response PostInternalWorkerJobsClaim200JSONResponse) VisitPostInternalWorkerJobsClaimResponse(w http.ResponseWriter) error {
+func (response ClaimWorkerJob200JSONResponse) VisitClaimWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -195,16 +195,16 @@ func (response PostInternalWorkerJobsClaim200JSONResponse) VisitPostInternalWork
 	return err
 }
 
-type PostInternalWorkerJobsClaim204Response = NoContentResponse
+type ClaimWorkerJob204Response = NoContentResponse
 
-func (response PostInternalWorkerJobsClaim204Response) VisitPostInternalWorkerJobsClaimResponse(w http.ResponseWriter) error {
+func (response ClaimWorkerJob204Response) VisitClaimWorkerJobResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type PostInternalWorkerJobsClaim500JSONResponse ErrorResponse
+type ClaimWorkerJob500JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsClaim500JSONResponse) VisitPostInternalWorkerJobsClaimResponse(w http.ResponseWriter) error {
+func (response ClaimWorkerJob500JSONResponse) VisitClaimWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -216,25 +216,25 @@ func (response PostInternalWorkerJobsClaim500JSONResponse) VisitPostInternalWork
 	return err
 }
 
-type PostInternalWorkerJobsIdCompleteRequestObject struct {
+type CompleteWorkerJobRequestObject struct {
 	Id   JobId `json:"id"`
-	Body *PostInternalWorkerJobsIdCompleteJSONRequestBody
+	Body *CompleteWorkerJobJSONRequestBody
 }
 
-type PostInternalWorkerJobsIdCompleteResponseObject interface {
-	VisitPostInternalWorkerJobsIdCompleteResponse(w http.ResponseWriter) error
+type CompleteWorkerJobResponseObject interface {
+	VisitCompleteWorkerJobResponse(w http.ResponseWriter) error
 }
 
-type PostInternalWorkerJobsIdComplete204Response = NoContentResponse
+type CompleteWorkerJob204Response = NoContentResponse
 
-func (response PostInternalWorkerJobsIdComplete204Response) VisitPostInternalWorkerJobsIdCompleteResponse(w http.ResponseWriter) error {
+func (response CompleteWorkerJob204Response) VisitCompleteWorkerJobResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type PostInternalWorkerJobsIdComplete400JSONResponse ErrorResponse
+type CompleteWorkerJob400JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdComplete400JSONResponse) VisitPostInternalWorkerJobsIdCompleteResponse(w http.ResponseWriter) error {
+func (response CompleteWorkerJob400JSONResponse) VisitCompleteWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -246,9 +246,9 @@ func (response PostInternalWorkerJobsIdComplete400JSONResponse) VisitPostInterna
 	return err
 }
 
-type PostInternalWorkerJobsIdComplete404JSONResponse ErrorResponse
+type CompleteWorkerJob404JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdComplete404JSONResponse) VisitPostInternalWorkerJobsIdCompleteResponse(w http.ResponseWriter) error {
+func (response CompleteWorkerJob404JSONResponse) VisitCompleteWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -260,9 +260,9 @@ func (response PostInternalWorkerJobsIdComplete404JSONResponse) VisitPostInterna
 	return err
 }
 
-type PostInternalWorkerJobsIdComplete500JSONResponse ErrorResponse
+type CompleteWorkerJob500JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdComplete500JSONResponse) VisitPostInternalWorkerJobsIdCompleteResponse(w http.ResponseWriter) error {
+func (response CompleteWorkerJob500JSONResponse) VisitCompleteWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -274,24 +274,24 @@ func (response PostInternalWorkerJobsIdComplete500JSONResponse) VisitPostInterna
 	return err
 }
 
-type PostInternalWorkerJobsIdFailRequestObject struct {
+type FailWorkerJobRequestObject struct {
 	Id JobId `json:"id"`
 }
 
-type PostInternalWorkerJobsIdFailResponseObject interface {
-	VisitPostInternalWorkerJobsIdFailResponse(w http.ResponseWriter) error
+type FailWorkerJobResponseObject interface {
+	VisitFailWorkerJobResponse(w http.ResponseWriter) error
 }
 
-type PostInternalWorkerJobsIdFail204Response = NoContentResponse
+type FailWorkerJob204Response = NoContentResponse
 
-func (response PostInternalWorkerJobsIdFail204Response) VisitPostInternalWorkerJobsIdFailResponse(w http.ResponseWriter) error {
+func (response FailWorkerJob204Response) VisitFailWorkerJobResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type PostInternalWorkerJobsIdFail400JSONResponse ErrorResponse
+type FailWorkerJob400JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdFail400JSONResponse) VisitPostInternalWorkerJobsIdFailResponse(w http.ResponseWriter) error {
+func (response FailWorkerJob400JSONResponse) VisitFailWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -303,9 +303,9 @@ func (response PostInternalWorkerJobsIdFail400JSONResponse) VisitPostInternalWor
 	return err
 }
 
-type PostInternalWorkerJobsIdFail404JSONResponse ErrorResponse
+type FailWorkerJob404JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdFail404JSONResponse) VisitPostInternalWorkerJobsIdFailResponse(w http.ResponseWriter) error {
+func (response FailWorkerJob404JSONResponse) VisitFailWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -317,9 +317,9 @@ func (response PostInternalWorkerJobsIdFail404JSONResponse) VisitPostInternalWor
 	return err
 }
 
-type PostInternalWorkerJobsIdFail500JSONResponse ErrorResponse
+type FailWorkerJob500JSONResponse ErrorResponse
 
-func (response PostInternalWorkerJobsIdFail500JSONResponse) VisitPostInternalWorkerJobsIdFailResponse(w http.ResponseWriter) error {
+func (response FailWorkerJob500JSONResponse) VisitFailWorkerJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -627,13 +627,13 @@ func (response PostEmbeddingsTextImage504JSONResponse) VisitPostEmbeddingsTextIm
 type StrictServerInterface interface {
 	// 次の pending ジョブをロックして取得
 	// (POST /internal/worker/jobs/claim)
-	PostInternalWorkerJobsClaim(ctx context.Context, request PostInternalWorkerJobsClaimRequestObject) (PostInternalWorkerJobsClaimResponseObject, error)
+	ClaimWorkerJob(ctx context.Context, request ClaimWorkerJobRequestObject) (ClaimWorkerJobResponseObject, error)
 	// ジョブを完了にする
 	// (POST /internal/worker/jobs/{id}/complete)
-	PostInternalWorkerJobsIdComplete(ctx context.Context, request PostInternalWorkerJobsIdCompleteRequestObject) (PostInternalWorkerJobsIdCompleteResponseObject, error)
+	CompleteWorkerJob(ctx context.Context, request CompleteWorkerJobRequestObject) (CompleteWorkerJobResponseObject, error)
 	// ジョブを失敗にする
 	// (POST /internal/worker/jobs/{id}/fail)
-	PostInternalWorkerJobsIdFail(ctx context.Context, request PostInternalWorkerJobsIdFailRequestObject) (PostInternalWorkerJobsIdFailResponseObject, error)
+	FailWorkerJob(ctx context.Context, request FailWorkerJobRequestObject) (FailWorkerJobResponseObject, error)
 	// 画像の埋め込みベクトルを返す
 	// (POST /v1/embeddings/image)
 	PostEmbeddingsImage(ctx context.Context, request PostEmbeddingsImageRequestObject) (PostEmbeddingsImageResponseObject, error)
@@ -657,79 +657,79 @@ type strictHandler struct {
 	middlewares []StrictMiddlewareFunc
 }
 
-// PostInternalWorkerJobsClaim operation middleware
-func (sh *strictHandler) PostInternalWorkerJobsClaim(ctx echo.Context) error {
-	var request PostInternalWorkerJobsClaimRequestObject
+// ClaimWorkerJob operation middleware
+func (sh *strictHandler) ClaimWorkerJob(ctx echo.Context) error {
+	var request ClaimWorkerJobRequestObject
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PostInternalWorkerJobsClaim(ctx.Request().Context(), request.(PostInternalWorkerJobsClaimRequestObject))
+		return sh.ssi.ClaimWorkerJob(ctx.Request().Context(), request.(ClaimWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PostInternalWorkerJobsClaim")
+		handler = middleware(handler, "ClaimWorkerJob")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(PostInternalWorkerJobsClaimResponseObject); ok {
-		return validResponse.VisitPostInternalWorkerJobsClaimResponse(ctx.Response())
+	} else if validResponse, ok := response.(ClaimWorkerJobResponseObject); ok {
+		return validResponse.VisitClaimWorkerJobResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
 	return nil
 }
 
-// PostInternalWorkerJobsIdComplete operation middleware
-func (sh *strictHandler) PostInternalWorkerJobsIdComplete(ctx echo.Context, id JobId) error {
-	var request PostInternalWorkerJobsIdCompleteRequestObject
+// CompleteWorkerJob operation middleware
+func (sh *strictHandler) CompleteWorkerJob(ctx echo.Context, id JobId) error {
+	var request CompleteWorkerJobRequestObject
 
 	request.Id = id
 
-	var body PostInternalWorkerJobsIdCompleteJSONRequestBody
+	var body CompleteWorkerJobJSONRequestBody
 	if err := ctx.Bind(&body); err != nil {
 		return err
 	}
 	request.Body = &body
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PostInternalWorkerJobsIdComplete(ctx.Request().Context(), request.(PostInternalWorkerJobsIdCompleteRequestObject))
+		return sh.ssi.CompleteWorkerJob(ctx.Request().Context(), request.(CompleteWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PostInternalWorkerJobsIdComplete")
+		handler = middleware(handler, "CompleteWorkerJob")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(PostInternalWorkerJobsIdCompleteResponseObject); ok {
-		return validResponse.VisitPostInternalWorkerJobsIdCompleteResponse(ctx.Response())
+	} else if validResponse, ok := response.(CompleteWorkerJobResponseObject); ok {
+		return validResponse.VisitCompleteWorkerJobResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
 	return nil
 }
 
-// PostInternalWorkerJobsIdFail operation middleware
-func (sh *strictHandler) PostInternalWorkerJobsIdFail(ctx echo.Context, id JobId) error {
-	var request PostInternalWorkerJobsIdFailRequestObject
+// FailWorkerJob operation middleware
+func (sh *strictHandler) FailWorkerJob(ctx echo.Context, id JobId) error {
+	var request FailWorkerJobRequestObject
 
 	request.Id = id
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PostInternalWorkerJobsIdFail(ctx.Request().Context(), request.(PostInternalWorkerJobsIdFailRequestObject))
+		return sh.ssi.FailWorkerJob(ctx.Request().Context(), request.(FailWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PostInternalWorkerJobsIdFail")
+		handler = middleware(handler, "FailWorkerJob")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(PostInternalWorkerJobsIdFailResponseObject); ok {
-		return validResponse.VisitPostInternalWorkerJobsIdFailResponse(ctx.Response())
+	} else if validResponse, ok := response.(FailWorkerJobResponseObject); ok {
+		return validResponse.VisitFailWorkerJobResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}

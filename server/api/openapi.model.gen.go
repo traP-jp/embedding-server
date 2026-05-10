@@ -119,8 +119,8 @@ type WorkerJobPayload struct {
 // JobId defines model for JobId.
 type JobId = int64
 
-// PostInternalWorkerJobsIdCompleteJSONBody defines parameters for PostInternalWorkerJobsIdComplete.
-type PostInternalWorkerJobsIdCompleteJSONBody struct {
+// CompleteWorkerJobJSONBody defines parameters for CompleteWorkerJob.
+type CompleteWorkerJobJSONBody struct {
 	Result EmbeddingResult `json:"result"`
 }
 
@@ -145,8 +145,8 @@ type PostEmbeddingsTextImageMultipartBody struct {
 	Text EmbeddingText `json:"text"`
 }
 
-// PostInternalWorkerJobsIdCompleteJSONRequestBody defines body for PostInternalWorkerJobsIdComplete for application/json ContentType.
-type PostInternalWorkerJobsIdCompleteJSONRequestBody PostInternalWorkerJobsIdCompleteJSONBody
+// CompleteWorkerJobJSONRequestBody defines body for CompleteWorkerJob for application/json ContentType.
+type CompleteWorkerJobJSONRequestBody CompleteWorkerJobJSONBody
 
 // PostEmbeddingsImageMultipartRequestBody defines body for PostEmbeddingsImage for multipart/form-data ContentType.
 type PostEmbeddingsImageMultipartRequestBody PostEmbeddingsImageMultipartBody
