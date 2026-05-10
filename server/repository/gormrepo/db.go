@@ -3,34 +3,39 @@ package gormrepo
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
-	sqliteDriver "github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"embedding-server/api/model"
 )
 
 func GetDBClient() (*gorm.DB, string, error) {
-	sqlitePath := os.Getenv("SQLITE_PATH")
-	if sqlitePath == "" {
-		sqlitePath = "data/embedding.db"
-	}
-	sqlitePath, err := filepath.Abs(sqlitePath)
-	if err != nil {
-		return nil, "", err
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		host := getenv("POSTGRES_HOST", "postgres")
+		port := getenv("POSTGRES_PORT", "5432")
+		user := getenv("POSTGRES_USER", "postgres")
+		password := getenv("POSTGRES_PASSWORD", "password")
+		dbname := getenv("POSTGRES_DB", "embedding")
+		sslmode := getenv("POSTGRES_SSLMODE", "disable")
+		dsn = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host,
+			port,
+			user,
+			password,
+			dbname,
+			sslmode,
+		)
 	}
 
-	sqliteDSN := fmt.Sprintf(
-		"file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)",
-		filepath.ToSlash(sqlitePath),
-	)
-	db, err := gorm.Open(sqliteDriver.Open(sqliteDSN), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, "", fmt.Errorf("gorm open: %w", err)
 	}
 
-	if err := db.AutoMigrate(&model.EmbeddingJob{}, &model.EmbeddingCache{}); err != nil {
+	if err := db.AutoMigrate(model.Models()...); err != nil {
 		return nil, "", fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -38,8 +43,16 @@ func GetDBClient() (*gorm.DB, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("sql db: %w", err)
 	}
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetMaxOpenConns(20)
 
-	return db, sqlitePath, nil
+	return db, dsn, nil
+}
+
+func getenv(key string, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value
 }

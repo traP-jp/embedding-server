@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,16 +12,22 @@ import (
 	"embedding-server/api/api"
 	"embedding-server/api/repository/gormrepo"
 	"embedding-server/api/router"
+	"embedding-server/api/service"
 )
 
 func main() {
-	db, sqlitePath, err := gormrepo.GetDBClient()
+	db, databaseInfo, err := gormrepo.GetDBClient()
 	if err != nil {
 		log.Fatal(err)
 	}
+	notifier, err := service.NewPostgresJobNotifier(context.Background(), databaseInfo)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer notifier.Close()
 
 	repo := gormrepo.GetRepository(db)
-	handlers := router.GetHandlers(repo)
+	handlers := router.GetHandlers(repo, notifier)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
 
 	e := echo.New()
@@ -55,6 +62,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("listening on %s (sqlite=%s)", port, sqlitePath)
+	log.Printf("listening on %s (postgres)", port)
 	e.Logger.Fatal(e.Start(":" + port))
 }
