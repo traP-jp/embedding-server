@@ -87,6 +87,9 @@ type ImageEmbeddingJobPayload struct {
 // ImageEmbeddingJobPayloadKind defines model for ImageEmbeddingJobPayload.Kind.
 type ImageEmbeddingJobPayloadKind string
 
+// JobId defines model for JobId.
+type JobId = openapi_types.UUID
+
 // TextEmbeddingJobPayload defines model for TextEmbeddingJobPayload.
 type TextEmbeddingJobPayload struct {
 	Kind TextEmbeddingJobPayloadKind `json:"kind"`
@@ -115,9 +118,6 @@ type TextImageEmbeddingJobPayloadKind string
 type WorkerJobPayload struct {
 	union json.RawMessage
 }
-
-// JobId defines model for JobId.
-type JobId = int64
 
 // CompleteWorkerJobJSONBody defines parameters for CompleteWorkerJob.
 type CompleteWorkerJobJSONBody struct {

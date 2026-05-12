@@ -2,25 +2,27 @@ package service
 
 import (
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type JobNotifier interface {
-	Subscribe(jobID int64) (<-chan struct{}, func())
-	Notify(jobID int64)
+	Subscribe(jobID uuid.UUID) (<-chan struct{}, func())
+	Notify(jobID uuid.UUID)
 }
 
 type LocalJobNotifier struct {
 	mu      sync.Mutex
-	waiters map[int64]chan struct{}
+	waiters map[uuid.UUID]chan struct{}
 }
 
 func NewLocalJobNotifier() *LocalJobNotifier {
 	return &LocalJobNotifier{
-		waiters: make(map[int64]chan struct{}),
+		waiters: make(map[uuid.UUID]chan struct{}),
 	}
 }
 
-func (n *LocalJobNotifier) Subscribe(jobID int64) (<-chan struct{}, func()) {
+func (n *LocalJobNotifier) Subscribe(jobID uuid.UUID) (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	n.mu.Lock()
 	n.waiters[jobID] = ch
@@ -36,7 +38,7 @@ func (n *LocalJobNotifier) Subscribe(jobID int64) (<-chan struct{}, func()) {
 	return ch, unsubscribe
 }
 
-func (n *LocalJobNotifier) Notify(jobID int64) {
+func (n *LocalJobNotifier) Notify(jobID uuid.UUID) {
 	n.mu.Lock()
 	waiter := n.waiters[jobID]
 	n.mu.Unlock()

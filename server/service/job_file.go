@@ -3,13 +3,14 @@ package service
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // 画像をローカルに保存する関数。将来はオブジェクトストレージにしてもいいかも
-func writeJobImage(jobID int64, filename string, raw []byte) (string, error) {
-	jobDir := filepath.Join("/data/jobs", strconv.FormatInt(jobID, 10))
+func writeJobImage(jobID uuid.UUID, filename string, raw []byte) (string, error) {
+	jobDir := filepath.Join("/data/jobs", jobID.String())
 	if err := os.MkdirAll(jobDir, 0o700); err != nil {
 		return "", err
 	}

@@ -57,7 +57,7 @@ func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx echo.Context) error {
 	// ------------- Path parameter "id" -------------
 	var id JobId
 
-	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64"})
+	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
 	}
@@ -73,7 +73,7 @@ func (w *ServerInterfaceWrapper) FailWorkerJob(ctx echo.Context) error {
 	// ------------- Path parameter "id" -------------
 	var id JobId
 
-	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64"})
+	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
 	}
@@ -177,7 +177,7 @@ type ClaimWorkerJobResponseObject interface {
 }
 
 type ClaimWorkerJob200JSONResponse struct {
-	Id int64 `json:"id"`
+	Id JobId `json:"id"`
 
 	// Payload worker が処理するジョブ内容
 	Payload WorkerJobPayload `json:"payload"`

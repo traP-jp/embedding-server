@@ -215,8 +215,7 @@ paths:
                                 required: [id, payload]
                                 properties:
                                     id:
-                                        type: integer
-                                        format: int64
+                                        $ref: "#/components/schemas/JobId"
                                     payload:
                                         $ref: "#/components/schemas/WorkerJobPayload"
                 "204":
@@ -306,8 +305,7 @@ components:
             in: path
             required: true
             schema:
-                type: integer
-                format: int64
+                $ref: "#/components/schemas/JobId"
 
     responses:
         NoContent:
@@ -321,6 +319,10 @@ components:
                 message:
                     type: string
                     description: エラーメッセージ
+
+        JobId:
+            type: string
+            format: uuid
 
         EmbeddingResult:
             type: object
