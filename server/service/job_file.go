@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // 画像をローカルに保存する関数。将来はオブジェクトストレージにしてもいいかも
@@ -13,9 +14,11 @@ func writeJobImage(jobID int64, filename string, raw []byte) (string, error) {
 		return "", err
 	}
 
-	// 拡張子を取り出す
-	ext := filepath.Ext(filename)
-	if ext == "" {
+	// 許可した画像拡張子だけ保存名に使う。
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp":
+	default:
 		ext = ".bin"
 	}
 
