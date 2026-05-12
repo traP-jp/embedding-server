@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -16,15 +15,11 @@ import (
 )
 
 func main() {
-	db, databaseInfo, err := gormrepo.GetDBClient()
+	db, err := gormrepo.GetDBClient()
 	if err != nil {
 		log.Fatal(err)
 	}
-	notifier, err := service.NewPostgresJobNotifier(context.Background(), databaseInfo)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer notifier.Close()
+	notifier := service.NewLocalJobNotifier()
 
 	repo := gormrepo.GetRepository(db)
 	handlers := router.GetHandlers(repo, notifier)
@@ -62,6 +57,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("listening on %s (postgres)", port)
+	log.Printf("listening on %s", port)
 	e.Logger.Fatal(e.Start(":" + port))
 }

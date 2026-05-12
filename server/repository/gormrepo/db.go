@@ -10,7 +10,7 @@ import (
 	"embedding-server/api/model"
 )
 
-func GetDBClient() (*gorm.DB, string, error) {
+func GetDBClient() (*gorm.DB, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		host := getenv("POSTGRES_HOST", "postgres")
@@ -32,21 +32,21 @@ func GetDBClient() (*gorm.DB, string, error) {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		return nil, "", fmt.Errorf("gorm open: %w", err)
+		return nil, fmt.Errorf("gorm open: %w", err)
 	}
 
 	if err := db.AutoMigrate(model.Models()...); err != nil {
-		return nil, "", fmt.Errorf("auto migrate: %w", err)
+		return nil, fmt.Errorf("auto migrate: %w", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, "", fmt.Errorf("sql db: %w", err)
+		return nil, fmt.Errorf("sql db: %w", err)
 	}
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetMaxOpenConns(20)
 
-	return db, dsn, nil
+	return db, nil
 }
 
 func getenv(key string, fallback string) string {
