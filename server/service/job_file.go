@@ -10,7 +10,7 @@ import (
 
 // 画像をローカルに保存する関数。将来はオブジェクトストレージにしてもいいかも
 func writeJobImage(jobID uuid.UUID, filename string, raw []byte) (string, error) {
-	jobDir := filepath.Join("/data/jobs", jobID.String())
+	jobDir := jobImageDir(jobID)
 	if err := os.MkdirAll(jobDir, 0o700); err != nil {
 		return "", err
 	}
@@ -28,4 +28,12 @@ func writeJobImage(jobID uuid.UUID, filename string, raw []byte) (string, error)
 		return "", err
 	}
 	return path, nil
+}
+
+func removeJobImageDir(jobID uuid.UUID) error {
+	return os.RemoveAll(jobImageDir(jobID))
+}
+
+func jobImageDir(jobID uuid.UUID) string {
+	return filepath.Join("/data/jobs", jobID.String())
 }
