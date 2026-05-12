@@ -15,17 +15,23 @@ var (
 	ErrEmbeddingJobFailed   = errors.New("embedding job failed")
 )
 
+type EmbeddingJobStatus string
+
+const (
+	EmbeddingJobStatusPending   EmbeddingJobStatus = "pending"
+	EmbeddingJobStatusCompleted EmbeddingJobStatus = "completed"
+	EmbeddingJobStatusFailed    EmbeddingJobStatus = "failed"
+)
+
 type EmbeddingJobState struct {
-	Status string
+	Status EmbeddingJobStatus
 	Result json.RawMessage
 }
 
 type EmbeddingJobRepository interface {
 	EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error)
 	CreatePendingJob(ctx context.Context, payload json.RawMessage) (uuid.UUID, error)
-	CreateJobWithStatus(ctx context.Context, payload json.RawMessage, status string) (uuid.UUID, error)
-	UpdatePayloadAndStatus(ctx context.Context, id uuid.UUID, fromStatus string, toStatus string, payload json.RawMessage) error
-	FailUpload(ctx context.Context, id uuid.UUID) error
+	CreatePendingJobWithID(ctx context.Context, id uuid.UUID, payload json.RawMessage) error
 	ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error)
 	EmbeddingJobResult(ctx context.Context, id uuid.UUID) (EmbeddingJobState, error)
 	Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error

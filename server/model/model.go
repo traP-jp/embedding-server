@@ -6,15 +6,17 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+
+	"embedding-server/api/repository"
 )
 
 // EmbeddingJob は埋め込みジョブ行（GORM AutoMigrate で作成）。
 type EmbeddingJob struct {
-	ID          uuid.UUID      `gorm:"type:uuid;primaryKey"`
-	Payload     datatypes.JSON `gorm:"type:jsonb;not null"`
-	Result      datatypes.JSON `gorm:"type:jsonb"`
-	Status      string         `gorm:"not null;default:pending"`
-	CreatedAt   time.Time      `gorm:"not null;autoCreateTime"`
+	ID          uuid.UUID                     `gorm:"type:uuid;primaryKey"`
+	Payload     datatypes.JSON                `gorm:"type:jsonb;not null"`
+	Result      datatypes.JSON                `gorm:"type:jsonb"`
+	Status      repository.EmbeddingJobStatus `gorm:"not null;default:pending"`
+	CreatedAt   time.Time                     `gorm:"not null;autoCreateTime"`
 	StartedAt   *time.Time
 	CompletedAt *time.Time
 }

@@ -29,7 +29,7 @@ func (r *Repository) EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (jso
 func (r *Repository) CreatePendingJob(ctx context.Context, payload json.RawMessage) (uuid.UUID, error) {
 	job := model.EmbeddingJob{
 		Payload: datatypes.JSON(payload),
-		Status:  "pending",
+		Status:  repository.EmbeddingJobStatusPending,
 	}
 	if err := r.db.WithContext(ctx).Create(&job).Error; err != nil {
 		return uuid.Nil, err
@@ -37,49 +37,13 @@ func (r *Repository) CreatePendingJob(ctx context.Context, payload json.RawMessa
 	return job.ID, nil
 }
 
-func (r *Repository) CreateJobWithStatus(ctx context.Context, payload json.RawMessage, status string) (uuid.UUID, error) {
+func (r *Repository) CreatePendingJobWithID(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
 	job := model.EmbeddingJob{
+		ID:      id,
 		Payload: datatypes.JSON(payload),
-		Status:  status,
+		Status:  repository.EmbeddingJobStatusPending,
 	}
-	if err := r.db.WithContext(ctx).Create(&job).Error; err != nil {
-		return uuid.Nil, err
-	}
-	return job.ID, nil
-}
-
-func (r *Repository) UpdatePayloadAndStatus(ctx context.Context, id uuid.UUID, fromStatus string, toStatus string, payload json.RawMessage) error {
-	updates := map[string]any{
-		"payload": datatypes.JSON(payload),
-		"status":  toStatus,
-	}
-	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, fromStatus).
-		Updates(updates)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return repository.ErrEmbeddingJobNotFound
-	}
-	return nil
-}
-
-func (r *Repository) FailUpload(ctx context.Context, id uuid.UUID) error {
-	now := time.Now()
-	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, "uploading").
-		Updates(map[string]any{
-			"status":       "failed",
-			"completed_at": now,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return repository.ErrEmbeddingJobNotFound
-	}
-	return nil
+	return r.db.WithContext(ctx).Create(&job).Error
 }
 
 func (r *Repository) ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error) {
@@ -87,17 +51,18 @@ func (r *Repository) ClaimNext(ctx context.Context) (id uuid.UUID, payload json.
 		var job model.EmbeddingJob
 		const q = `
 UPDATE embedding_jobs AS j
-SET status = ?, started_at = NOW()
+SET started_at = NOW()
 WHERE j.id = (
 	SELECT id FROM embedding_jobs
-	WHERE status = ?
+	WHERE status = ? AND started_at IS NULL
 	ORDER BY created_at ASC, id ASC
 	FOR UPDATE SKIP LOCKED
 	LIMIT 1
 )
 AND j.status = ?
+AND j.started_at IS NULL
 RETURNING id, payload, status, created_at, started_at, completed_at`
-		res := tx.Raw(q, "processing", "pending", "pending").Scan(&job)
+		res := tx.Raw(q, repository.EmbeddingJobStatusPending, repository.EmbeddingJobStatusPending).Scan(&job)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -132,14 +97,14 @@ func (r *Repository) EmbeddingJobResult(ctx context.Context, id uuid.UUID) (repo
 func (r *Repository) Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error {
 	now := time.Now()
 	updates := map[string]any{
-		"status":       "completed",
+		"status":       repository.EmbeddingJobStatusCompleted,
 		"completed_at": now,
 	}
 	if len(result) > 0 {
 		updates["result"] = datatypes.JSON(result)
 	}
 	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, "processing").
+		Where("id = ? AND status = ? AND started_at IS NOT NULL", id, repository.EmbeddingJobStatusPending).
 		Updates(updates)
 	if res.Error != nil {
 		return res.Error
@@ -153,9 +118,9 @@ func (r *Repository) Complete(ctx context.Context, id uuid.UUID, result json.Raw
 func (r *Repository) Fail(ctx context.Context, id uuid.UUID) error {
 	now := time.Now()
 	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, "processing").
+		Where("id = ? AND status = ? AND started_at IS NOT NULL", id, repository.EmbeddingJobStatusPending).
 		Updates(map[string]any{
-			"status":       "failed",
+			"status":       repository.EmbeddingJobStatusFailed,
 			"completed_at": now,
 		})
 	if res.Error != nil {
