@@ -22,7 +22,8 @@ func main() {
 	notifier := service.NewLocalJobNotifier()
 
 	repo := gormrepo.GetRepository(db)
-	handlers := router.GetHandlers(repo, notifier)
+	embedding := service.NewEmbeddingService(repo, notifier)
+	handlers := router.GetHandlers(repo, notifier, embedding)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
 
 	e := echo.New()

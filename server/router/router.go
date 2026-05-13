@@ -1,13 +1,20 @@
 package router
 
-import "embedding-server/api/repository"
+import (
+	"embedding-server/api/repository"
+	"embedding-server/api/service"
+)
 
 type Handlers struct {
-	Repo repository.Repository
+	Embedding *service.EmbeddingService
+	repo      repository.Repository
+	notifier  service.JobNotifier
 }
 
-func GetHandlers(repo repository.Repository) *Handlers {
+func GetHandlers(repo repository.Repository, notifier service.JobNotifier, embedding *service.EmbeddingService) *Handlers {
 	return &Handlers{
-		Repo: repo,
+		Embedding: embedding,
+		repo:      repo,
+		notifier:  notifier,
 	}
 }
