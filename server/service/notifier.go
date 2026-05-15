@@ -41,6 +41,7 @@ func (n *LocalJobNotifier) Subscribe(jobID uuid.UUID) (<-chan struct{}, func()) 
 func (n *LocalJobNotifier) Notify(jobID uuid.UUID) {
 	n.mu.Lock()
 	waiter := n.waiters[jobID]
+	delete(n.waiters, jobID)
 	n.mu.Unlock()
 	if waiter == nil {
 		return
