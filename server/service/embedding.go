@@ -44,8 +44,8 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	if len(images) == 0 {
 		// テキストのみの場合は、先にキャッシュを確認して、あればすぐ返す
 		if raw, err := s.repo.TextEmbeddingCacheGet(ctx, text); err == nil {
-			result, err := parseEmbeddingResult(raw)
-			if err == nil {
+			var result api.EmbeddingResult
+			if err := json.Unmarshal(raw, &result); err == nil {
 				return result, nil
 			}
 			log.Printf("cache parse text: %v", err)
@@ -73,16 +73,16 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	payload, err := json.Marshal(payloadBody)
 	if err != nil {
 		log.Printf("marshal embedding job: %v", err)
-		if cleanupErr := RemoveJobImageDir(id); cleanupErr != nil {
-			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
+		if err := RemoveJobImageDir(id); err != nil {
+			log.Printf("cleanup image job dir id=%s: %v", id, err)
 		}
 		return api.EmbeddingResult{}, err
 	}
 
 	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
 		log.Printf("create embedding job: %v", err)
-		if cleanupErr := RemoveJobImageDir(id); cleanupErr != nil {
-			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
+		if err := RemoveJobImageDir(id); err != nil {
+			log.Printf("cleanup image job dir id=%s: %v", id, err)
 		}
 		return api.EmbeddingResult{}, err
 	}
@@ -148,19 +148,11 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 		}
 	}
 
-	result, err := parseEmbeddingResult(job.Result)
-	if err != nil {
+	var result api.EmbeddingResult
+	if err := json.Unmarshal(job.Result, &result); err != nil {
 		log.Printf("parse embedding result: %v", err)
 		return api.EmbeddingResult{}, err
 	}
 
-	return result, nil
-}
-
-func parseEmbeddingResult(raw json.RawMessage) (api.EmbeddingResult, error) {
-	var result api.EmbeddingResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return api.EmbeddingResult{}, err
-	}
 	return result, nil
 }
