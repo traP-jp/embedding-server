@@ -90,8 +90,8 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	return s.waitEmbeddingResult(ctx, id)
 }
 
+// jobの終了を待つ。ジョブが完了していれば結果を返し、完了していなければ待機する。
 func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
-	// 30s以上workerが時間かかるようならerrorにする
 	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
 	defer deadline.Stop()
 
@@ -99,17 +99,9 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 		return api.EmbeddingResult{}, ErrNotifierRequired
 	}
 
-	// 結果がすでにできているかもしれないのでdbを見に行く
-	if result, err := s.readEmbeddingResult(ctx, id); err == nil {
-		return result, nil
-	} else if !errors.Is(err, errEmbeddingResultNotReady) {
-		return api.EmbeddingResult{}, err
-	}
-
 	ch, unsubscribe := s.notifier.Subscribe(id)
 	defer unsubscribe()
 
-	// job完了通知がすでに来ているかもしれないのでdbをもう一度見に行く
 	if result, err := s.readEmbeddingResult(ctx, id); err == nil {
 		return result, nil
 	} else if !errors.Is(err, errEmbeddingResultNotReady) {
@@ -142,10 +134,9 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 		return api.EmbeddingResult{}, repository.ErrEmbeddingJobFailed
 	case repository.EmbeddingJobStatusPending:
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
+	case repository.EmbeddingJobStatusProcessing:
+		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	case repository.EmbeddingJobStatusCompleted:
-		if len(job.Result) == 0 {
-			return api.EmbeddingResult{}, errEmbeddingResultNotReady
-		}
 	}
 
 	var result api.EmbeddingResult

@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"embedding-server/api/repository"
-
-	"github.com/google/uuid"
 )
 
-const imageRetentionPeriod = 24 * time.Hour
+const (
+	imageRetentionPeriod = 6 * time.Hour
+	jobTTL               = 6 * time.Hour
+)
 
 type CleanupService struct {
 	jobDir string
@@ -24,25 +25,41 @@ func NewCleanupService(jobDir string, repo repository.EmbeddingJobRepository) *C
 }
 
 func (s *CleanupService) Run(ctx context.Context) {
-	ticker := time.NewTicker(imageRetentionPeriod)
-	defer ticker.Stop()
+	jobTicker := time.NewTicker(jobTTL)
+	defer jobTicker.Stop()
 
-	log.Printf("cleanup service started: retention=%s", imageRetentionPeriod)
+	imageTicker := time.NewTicker(imageRetentionPeriod)
+	defer imageTicker.Stop()
 
-	s.cleanup(ctx)
+	log.Printf("cleanup service started: imageRetention=%s jobTTL=%s", imageRetentionPeriod, jobTTL)
+
+	s.cleanupExpiredJobs(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("cleanup service stopped")
 			return
-		case <-ticker.C:
-			s.cleanup(ctx)
+		case <-jobTicker.C:
+			s.cleanupExpiredJobs(ctx)
+		case <-imageTicker.C:
+			s.cleanupImageDirs(ctx)
 		}
 	}
 }
 
-func (s *CleanupService) cleanup(ctx context.Context) {
+func (s *CleanupService) cleanupExpiredJobs(ctx context.Context) {
+	deleted, err := s.repo.CleanupExpiredJobs(ctx, jobTTL)
+	if err != nil {
+		log.Printf("cleanup expired jobs: %v", err)
+		return
+	}
+	if deleted > 0 {
+		log.Printf("cleanup expired jobs: deleted=%d", deleted)
+	}
+}
+
+func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
 	entries, err := os.ReadDir(s.jobDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -67,20 +84,9 @@ func (s *CleanupService) cleanup(ctx context.Context) {
 		}
 
 		if info.ModTime().Before(cutoff) {
-			id, err := uuid.Parse(entry.Name())
-			if err != nil {
-				log.Printf("cleanup invalid job dir name=%s: %v", entry.Name(), err)
-				continue
-			}
-
 			path := filepath.Join(s.jobDir, entry.Name())
 			if err := os.RemoveAll(path); err != nil {
 				log.Printf("cleanup remove dir=%s: %v", entry.Name(), err)
-				continue
-			}
-
-			if err := s.repo.DeleteJob(ctx, id); err != nil {
-				log.Printf("cleanup delete job id=%s: %v", id, err)
 				continue
 			}
 
@@ -89,6 +95,6 @@ func (s *CleanupService) cleanup(ctx context.Context) {
 	}
 
 	if cleaned > 0 {
-		log.Printf("cleanup completed: cleaned=%d", cleaned)
+		log.Printf("cleanup image dirs: cleaned=%d", cleaned)
 	}
 }

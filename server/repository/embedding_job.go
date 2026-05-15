@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -43,4 +44,5 @@ type EmbeddingJobRepository interface {
 	Fail(ctx context.Context, id uuid.UUID) error
 	CountPendingJobs(ctx context.Context) (int, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) error
+	CleanupExpiredJobs(ctx context.Context, ttl time.Duration) (int64, error)
 }
