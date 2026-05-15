@@ -72,17 +72,17 @@ func (s *EmbeddingService) CreateTextEmbedding(ctx context.Context, text string)
 	return s.waitEmbeddingResult(ctx, id)
 }
 
-func (s *EmbeddingService) CreateImageEmbedding(ctx context.Context, filename string, raw []byte) (api.EmbeddingResult, error) {
+func (s *EmbeddingService) CreateImageEmbedding(ctx context.Context, images [][]byte) (api.EmbeddingResult, error) {
 	id := uuid.New()
-	imagePath, err := writeJobImage(id, filename, raw)
+	imagePaths, err := writeJobImages(id, images)
 	if err != nil {
 		log.Printf("write image job: %v", err)
 		return api.EmbeddingResult{}, err
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"kind":       "image",
-		"image_path": imagePath,
+		"kind":        "image",
+		"image_paths": imagePaths,
 	})
 	if err != nil {
 		log.Printf("marshal image job: %v", err)
@@ -98,23 +98,23 @@ func (s *EmbeddingService) CreateImageEmbedding(ctx context.Context, filename st
 	return s.waitEmbeddingResult(ctx, id)
 }
 
-func (s *EmbeddingService) CreateTextImageEmbedding(ctx context.Context, text string, filename string, raw []byte) (api.EmbeddingResult, error) {
+func (s *EmbeddingService) CreateTextImageEmbedding(ctx context.Context, text string, images [][]byte) (api.EmbeddingResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return api.EmbeddingResult{}, ErrTextRequired
 	}
 
 	id := uuid.New()
-	imagePath, err := writeJobImage(id, filename, raw)
+	imagePaths, err := writeJobImages(id, images)
 	if err != nil {
 		log.Printf("write text_image job: %v", err)
 		return api.EmbeddingResult{}, err
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"kind":       "text_image",
-		"text":       text,
-		"image_path": imagePath,
+		"kind":        "text_image",
+		"text":        text,
+		"image_paths": imagePaths,
 	})
 	if err != nil {
 		log.Printf("marshal text_image job: %v", err)

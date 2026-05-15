@@ -1,33 +1,45 @@
 package service
 
 import (
+	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 
 	"github.com/google/uuid"
 )
 
+var errUnsupportedJobImageType = errors.New("unsupported job image type")
+
 // 画像をローカルに保存する関数。将来はオブジェクトストレージにしてもいいかも
-func writeJobImage(jobID uuid.UUID, filename string, raw []byte) (string, error) {
+func writeJobImages(jobID uuid.UUID, images [][]byte) ([]string, error) {
 	jobDir := jobImageDir(jobID)
 	if err := os.MkdirAll(jobDir, 0o700); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// 許可した画像拡張子だけ保存名に使う。
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".jpg", ".jpeg", ".png", ".webp":
-	default:
-		ext = ".bin"
-	}
+	paths := make([]string, 0, len(images))
+	for i, raw := range images {
+		var ext string
+		switch http.DetectContentType(raw) {
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			return nil, errUnsupportedJobImageType
+		}
 
-	path := filepath.Join(jobDir, "input"+ext)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		return "", err
+		path := filepath.Join(jobDir, "input-"+strconv.Itoa(i)+ext)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
 	}
-	return path, nil
+	return paths, nil
 }
 
 func removeJobImageDir(jobID uuid.UUID) error {
