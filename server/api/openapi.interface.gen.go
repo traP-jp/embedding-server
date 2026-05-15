@@ -29,12 +29,12 @@ type ServerInterface interface {
 	// 画像群の埋め込みベクトルを返す
 	// (POST /v1/embeddings/images)
 	PostEmbeddingsImages(ctx echo.Context) error
+	// テキストと画像群を合わせた埋め込みベクトルを返す
+	// (POST /v1/embeddings/multimodal)
+	PostEmbeddingsMultimodal(ctx echo.Context) error
 	// テキストの埋め込みベクトルを返す
 	// (POST /v1/embeddings/text)
 	PostEmbeddingsText(ctx echo.Context) error
-	// テキストと画像群を合わせた埋め込みベクトルを返す
-	// (POST /v1/embeddings/text-images)
-	PostEmbeddingsTextImages(ctx echo.Context) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -92,21 +92,21 @@ func (w *ServerInterfaceWrapper) PostEmbeddingsImages(ctx echo.Context) error {
 	return err
 }
 
+// PostEmbeddingsMultimodal converts echo context to params.
+func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.PostEmbeddingsMultimodal(ctx)
+	return err
+}
+
 // PostEmbeddingsText converts echo context to params.
 func (w *ServerInterfaceWrapper) PostEmbeddingsText(ctx echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.PostEmbeddingsText(ctx)
-	return err
-}
-
-// PostEmbeddingsTextImages converts echo context to params.
-func (w *ServerInterfaceWrapper) PostEmbeddingsTextImages(ctx echo.Context) error {
-	var err error
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.PostEmbeddingsTextImages(ctx)
 	return err
 }
 
@@ -142,8 +142,8 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.POST(baseURL+"/internal/worker/jobs/:id/complete", wrapper.CompleteWorkerJob)
 	router.POST(baseURL+"/internal/worker/jobs/:id/fail", wrapper.FailWorkerJob)
 	router.POST(baseURL+"/v1/embeddings/images", wrapper.PostEmbeddingsImages)
+	router.POST(baseURL+"/v1/embeddings/multimodal", wrapper.PostEmbeddingsMultimodal)
 	router.POST(baseURL+"/v1/embeddings/text", wrapper.PostEmbeddingsText)
-	router.POST(baseURL+"/v1/embeddings/text-images", wrapper.PostEmbeddingsTextImages)
 
 }
 
@@ -342,6 +342,76 @@ func (response PostEmbeddingsImages504JSONResponse) VisitPostEmbeddingsImagesRes
 	return json.NewEncoder(w).Encode(response)
 }
 
+type PostEmbeddingsMultimodalRequestObject struct {
+	Body *multipart.Reader
+}
+
+type PostEmbeddingsMultimodalResponseObject interface {
+	VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error
+}
+
+type PostEmbeddingsMultimodal200JSONResponse EmbeddingResult
+
+func (response PostEmbeddingsMultimodal200JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostEmbeddingsMultimodal400JSONResponse ErrorResponse
+
+func (response PostEmbeddingsMultimodal400JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostEmbeddingsMultimodal413JSONResponse ErrorResponse
+
+func (response PostEmbeddingsMultimodal413JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostEmbeddingsMultimodal500JSONResponse ErrorResponse
+
+func (response PostEmbeddingsMultimodal500JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostEmbeddingsMultimodal503ResponseHeaders struct {
+	RetryAfter int
+}
+
+type PostEmbeddingsMultimodal503JSONResponse struct {
+	Body    ErrorResponse
+	Headers PostEmbeddingsMultimodal503ResponseHeaders
+}
+
+func (response PostEmbeddingsMultimodal503JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type PostEmbeddingsMultimodal504JSONResponse ErrorResponse
+
+func (response PostEmbeddingsMultimodal504JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(504)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type PostEmbeddingsTextRequestObject struct {
 	Body *PostEmbeddingsTextJSONRequestBody
 }
@@ -403,76 +473,6 @@ func (response PostEmbeddingsText504JSONResponse) VisitPostEmbeddingsTextRespons
 	return json.NewEncoder(w).Encode(response)
 }
 
-type PostEmbeddingsTextImagesRequestObject struct {
-	Body *multipart.Reader
-}
-
-type PostEmbeddingsTextImagesResponseObject interface {
-	VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error
-}
-
-type PostEmbeddingsTextImages200JSONResponse EmbeddingResult
-
-func (response PostEmbeddingsTextImages200JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostEmbeddingsTextImages400JSONResponse ErrorResponse
-
-func (response PostEmbeddingsTextImages400JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostEmbeddingsTextImages413JSONResponse ErrorResponse
-
-func (response PostEmbeddingsTextImages413JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostEmbeddingsTextImages500JSONResponse ErrorResponse
-
-func (response PostEmbeddingsTextImages500JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostEmbeddingsTextImages503ResponseHeaders struct {
-	RetryAfter int
-}
-
-type PostEmbeddingsTextImages503JSONResponse struct {
-	Body    ErrorResponse
-	Headers PostEmbeddingsTextImages503ResponseHeaders
-}
-
-func (response PostEmbeddingsTextImages503JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(503)
-
-	return json.NewEncoder(w).Encode(response.Body)
-}
-
-type PostEmbeddingsTextImages504JSONResponse ErrorResponse
-
-func (response PostEmbeddingsTextImages504JSONResponse) VisitPostEmbeddingsTextImagesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(504)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// 次の pending ジョブをロックして取得
@@ -487,12 +487,12 @@ type StrictServerInterface interface {
 	// 画像群の埋め込みベクトルを返す
 	// (POST /v1/embeddings/images)
 	PostEmbeddingsImages(ctx context.Context, request PostEmbeddingsImagesRequestObject) (PostEmbeddingsImagesResponseObject, error)
+	// テキストと画像群を合わせた埋め込みベクトルを返す
+	// (POST /v1/embeddings/multimodal)
+	PostEmbeddingsMultimodal(ctx context.Context, request PostEmbeddingsMultimodalRequestObject) (PostEmbeddingsMultimodalResponseObject, error)
 	// テキストの埋め込みベクトルを返す
 	// (POST /v1/embeddings/text)
 	PostEmbeddingsText(ctx context.Context, request PostEmbeddingsTextRequestObject) (PostEmbeddingsTextResponseObject, error)
-	// テキストと画像群を合わせた埋め込みベクトルを返す
-	// (POST /v1/embeddings/text-images)
-	PostEmbeddingsTextImages(ctx context.Context, request PostEmbeddingsTextImagesRequestObject) (PostEmbeddingsTextImagesResponseObject, error)
 }
 
 type StrictHandlerFunc = strictecho.StrictEchoHandlerFunc
@@ -615,6 +615,35 @@ func (sh *strictHandler) PostEmbeddingsImages(ctx echo.Context) error {
 	return nil
 }
 
+// PostEmbeddingsMultimodal operation middleware
+func (sh *strictHandler) PostEmbeddingsMultimodal(ctx echo.Context) error {
+	var request PostEmbeddingsMultimodalRequestObject
+
+	if reader, err := ctx.Request().MultipartReader(); err != nil {
+		return err
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PostEmbeddingsMultimodal(ctx.Request().Context(), request.(PostEmbeddingsMultimodalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PostEmbeddingsMultimodal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(PostEmbeddingsMultimodalResponseObject); ok {
+		return validResponse.VisitPostEmbeddingsMultimodalResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
 // PostEmbeddingsText operation middleware
 func (sh *strictHandler) PostEmbeddingsText(ctx echo.Context) error {
 	var request PostEmbeddingsTextRequestObject
@@ -638,35 +667,6 @@ func (sh *strictHandler) PostEmbeddingsText(ctx echo.Context) error {
 		return err
 	} else if validResponse, ok := response.(PostEmbeddingsTextResponseObject); ok {
 		return validResponse.VisitPostEmbeddingsTextResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// PostEmbeddingsTextImages operation middleware
-func (sh *strictHandler) PostEmbeddingsTextImages(ctx echo.Context) error {
-	var request PostEmbeddingsTextImagesRequestObject
-
-	if reader, err := ctx.Request().MultipartReader(); err != nil {
-		return err
-	} else {
-		request.Body = reader
-	}
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PostEmbeddingsTextImages(ctx.Request().Context(), request.(PostEmbeddingsTextImagesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PostEmbeddingsTextImages")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(PostEmbeddingsTextImagesResponseObject); ok {
-		return validResponse.VisitPostEmbeddingsTextImagesResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}

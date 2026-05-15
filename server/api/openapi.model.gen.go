@@ -4,57 +4,8 @@
 package api
 
 import (
-	"encoding/json"
-	"errors"
-
-	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
-
-// Defines values for ImageEmbeddingJobPayloadKind.
-const (
-	Image ImageEmbeddingJobPayloadKind = "image"
-)
-
-// Valid indicates whether the value is a known member of the ImageEmbeddingJobPayloadKind enum.
-func (e ImageEmbeddingJobPayloadKind) Valid() bool {
-	switch e {
-	case Image:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TextEmbeddingJobPayloadKind.
-const (
-	Text TextEmbeddingJobPayloadKind = "text"
-)
-
-// Valid indicates whether the value is a known member of the TextEmbeddingJobPayloadKind enum.
-func (e TextEmbeddingJobPayloadKind) Valid() bool {
-	switch e {
-	case Text:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TextImageEmbeddingJobPayloadKind.
-const (
-	TextImage TextImageEmbeddingJobPayloadKind = "text_image"
-)
-
-// Valid indicates whether the value is a known member of the TextImageEmbeddingJobPayloadKind enum.
-func (e TextImageEmbeddingJobPayloadKind) Valid() bool {
-	switch e {
-	case TextImage:
-		return true
-	default:
-		return false
-	}
-}
 
 // EmbeddingImageFile 埋め込みに用いる画像バイナリ
 type EmbeddingImageFile = openapi_types.File
@@ -80,46 +31,16 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// ImageEmbeddingJobPayload defines model for ImageEmbeddingJobPayload.
-type ImageEmbeddingJobPayload struct {
-	// ImagePaths worker が参照するローカルファイルパスのリスト
-	ImagePaths EmbeddingImagePaths          `json:"image_paths"`
-	Kind       ImageEmbeddingJobPayloadKind `json:"kind"`
-}
-
-// ImageEmbeddingJobPayloadKind defines model for ImageEmbeddingJobPayload.Kind.
-type ImageEmbeddingJobPayloadKind string
-
 // JobId defines model for JobId.
 type JobId = openapi_types.UUID
 
-// TextEmbeddingJobPayload defines model for TextEmbeddingJobPayload.
-type TextEmbeddingJobPayload struct {
-	Kind TextEmbeddingJobPayloadKind `json:"kind"`
-
-	// Text 埋め込みに用いるテキスト
-	Text EmbeddingText `json:"text"`
-}
-
-// TextEmbeddingJobPayloadKind defines model for TextEmbeddingJobPayload.Kind.
-type TextEmbeddingJobPayloadKind string
-
-// TextImageEmbeddingJobPayload defines model for TextImageEmbeddingJobPayload.
-type TextImageEmbeddingJobPayload struct {
-	// ImagePaths worker が参照するローカルファイルパスのリスト
-	ImagePaths EmbeddingImagePaths              `json:"image_paths"`
-	Kind       TextImageEmbeddingJobPayloadKind `json:"kind"`
-
-	// Text 埋め込みに用いるテキスト
-	Text EmbeddingText `json:"text"`
-}
-
-// TextImageEmbeddingJobPayloadKind defines model for TextImageEmbeddingJobPayload.Kind.
-type TextImageEmbeddingJobPayloadKind string
-
 // WorkerJobPayload worker が処理するジョブ内容
 type WorkerJobPayload struct {
-	union json.RawMessage
+	// ImagePaths worker が参照するローカルファイルパスのリスト
+	ImagePaths *EmbeddingImagePaths `json:"image_paths,omitempty"`
+
+	// Text 埋め込みに用いるテキスト
+	Text *EmbeddingText `json:"text,omitempty"`
 }
 
 // CompleteWorkerJobJSONBody defines parameters for CompleteWorkerJob.
@@ -132,16 +53,16 @@ type PostEmbeddingsImagesMultipartBody struct {
 	Images []EmbeddingImageFile `json:"images"`
 }
 
-// PostEmbeddingsTextJSONBody defines parameters for PostEmbeddingsText.
-type PostEmbeddingsTextJSONBody struct {
+// PostEmbeddingsMultimodalMultipartBody defines parameters for PostEmbeddingsMultimodal.
+type PostEmbeddingsMultimodalMultipartBody struct {
+	Images *[]EmbeddingImageFile `json:"images,omitempty"`
+
 	// Text 埋め込みに用いるテキスト
-	Text EmbeddingText `json:"text"`
+	Text *EmbeddingText `json:"text,omitempty"`
 }
 
-// PostEmbeddingsTextImagesMultipartBody defines parameters for PostEmbeddingsTextImages.
-type PostEmbeddingsTextImagesMultipartBody struct {
-	Images []EmbeddingImageFile `json:"images"`
-
+// PostEmbeddingsTextJSONBody defines parameters for PostEmbeddingsText.
+type PostEmbeddingsTextJSONBody struct {
 	// Text 埋め込みに用いるテキスト
 	Text EmbeddingText `json:"text"`
 }
@@ -152,127 +73,8 @@ type CompleteWorkerJobJSONRequestBody CompleteWorkerJobJSONBody
 // PostEmbeddingsImagesMultipartRequestBody defines body for PostEmbeddingsImages for multipart/form-data ContentType.
 type PostEmbeddingsImagesMultipartRequestBody PostEmbeddingsImagesMultipartBody
 
+// PostEmbeddingsMultimodalMultipartRequestBody defines body for PostEmbeddingsMultimodal for multipart/form-data ContentType.
+type PostEmbeddingsMultimodalMultipartRequestBody PostEmbeddingsMultimodalMultipartBody
+
 // PostEmbeddingsTextJSONRequestBody defines body for PostEmbeddingsText for application/json ContentType.
 type PostEmbeddingsTextJSONRequestBody PostEmbeddingsTextJSONBody
-
-// PostEmbeddingsTextImagesMultipartRequestBody defines body for PostEmbeddingsTextImages for multipart/form-data ContentType.
-type PostEmbeddingsTextImagesMultipartRequestBody PostEmbeddingsTextImagesMultipartBody
-
-// AsTextEmbeddingJobPayload returns the union data inside the WorkerJobPayload as a TextEmbeddingJobPayload
-func (t WorkerJobPayload) AsTextEmbeddingJobPayload() (TextEmbeddingJobPayload, error) {
-	var body TextEmbeddingJobPayload
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromTextEmbeddingJobPayload overwrites any union data inside the WorkerJobPayload as the provided TextEmbeddingJobPayload
-func (t *WorkerJobPayload) FromTextEmbeddingJobPayload(v TextEmbeddingJobPayload) error {
-	v.Kind = "text"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeTextEmbeddingJobPayload performs a merge with any union data inside the WorkerJobPayload, using the provided TextEmbeddingJobPayload
-func (t *WorkerJobPayload) MergeTextEmbeddingJobPayload(v TextEmbeddingJobPayload) error {
-	v.Kind = "text"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsImageEmbeddingJobPayload returns the union data inside the WorkerJobPayload as a ImageEmbeddingJobPayload
-func (t WorkerJobPayload) AsImageEmbeddingJobPayload() (ImageEmbeddingJobPayload, error) {
-	var body ImageEmbeddingJobPayload
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromImageEmbeddingJobPayload overwrites any union data inside the WorkerJobPayload as the provided ImageEmbeddingJobPayload
-func (t *WorkerJobPayload) FromImageEmbeddingJobPayload(v ImageEmbeddingJobPayload) error {
-	v.Kind = "image"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeImageEmbeddingJobPayload performs a merge with any union data inside the WorkerJobPayload, using the provided ImageEmbeddingJobPayload
-func (t *WorkerJobPayload) MergeImageEmbeddingJobPayload(v ImageEmbeddingJobPayload) error {
-	v.Kind = "image"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsTextImageEmbeddingJobPayload returns the union data inside the WorkerJobPayload as a TextImageEmbeddingJobPayload
-func (t WorkerJobPayload) AsTextImageEmbeddingJobPayload() (TextImageEmbeddingJobPayload, error) {
-	var body TextImageEmbeddingJobPayload
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromTextImageEmbeddingJobPayload overwrites any union data inside the WorkerJobPayload as the provided TextImageEmbeddingJobPayload
-func (t *WorkerJobPayload) FromTextImageEmbeddingJobPayload(v TextImageEmbeddingJobPayload) error {
-	v.Kind = "text_image"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeTextImageEmbeddingJobPayload performs a merge with any union data inside the WorkerJobPayload, using the provided TextImageEmbeddingJobPayload
-func (t *WorkerJobPayload) MergeTextImageEmbeddingJobPayload(v TextImageEmbeddingJobPayload) error {
-	v.Kind = "text_image"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-func (t WorkerJobPayload) Discriminator() (string, error) {
-	var discriminator struct {
-		Discriminator string `json:"kind"`
-	}
-	err := json.Unmarshal(t.union, &discriminator)
-	return discriminator.Discriminator, err
-}
-
-func (t WorkerJobPayload) ValueByDiscriminator() (interface{}, error) {
-	discriminator, err := t.Discriminator()
-	if err != nil {
-		return nil, err
-	}
-	switch discriminator {
-	case "image":
-		return t.AsImageEmbeddingJobPayload()
-	case "text":
-		return t.AsTextEmbeddingJobPayload()
-	case "text_image":
-		return t.AsTextImageEmbeddingJobPayload()
-	default:
-		return nil, errors.New("unknown discriminator value: " + discriminator)
-	}
-}
-
-func (t WorkerJobPayload) MarshalJSON() ([]byte, error) {
-	b, err := t.union.MarshalJSON()
-	return b, err
-}
-
-func (t *WorkerJobPayload) UnmarshalJSON(b []byte) error {
-	err := t.union.UnmarshalJSON(b)
-	return err
-}

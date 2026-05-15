@@ -93,6 +93,7 @@ paths:
                                 images:
                                     type: array
                                     minItems: 1
+                                    maximum: 4
                                     items:
                                         $ref: "#/components/schemas/EmbeddingImageFile"
             responses:
@@ -138,12 +139,13 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
 
-    /v1/embeddings/text-images:
+    /v1/embeddings/multimodal:
         post:
-            operationId: postEmbeddingsTextImages
+            operationId: postEmbeddingsMultimodal
             tags: [embeddings]
             summary: テキストと画像群を合わせた埋め込みベクトルを返す
             description: |
+                text または images の少なくとも一方を指定する。
                 ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
             requestBody:
                 required: true
@@ -151,13 +153,12 @@ paths:
                     multipart/form-data:
                         schema:
                             type: object
-                            required: [text, images]
                             properties:
                                 text:
                                     $ref: "#/components/schemas/EmbeddingText"
                                 images:
                                     type: array
-                                    minItems: 1
+                                    maximum: 4
                                     items:
                                         $ref: "#/components/schemas/EmbeddingImageFile"
             responses:
@@ -363,45 +364,9 @@ components:
             description: worker が参照するローカルファイルパスのリスト
 
         WorkerJobPayload:
+            type: object
             description: worker が処理するジョブ内容
-            oneOf:
-                - $ref: "#/components/schemas/TextEmbeddingJobPayload"
-                - $ref: "#/components/schemas/ImageEmbeddingJobPayload"
-                - $ref: "#/components/schemas/TextImageEmbeddingJobPayload"
-            discriminator:
-                propertyName: kind
-                mapping:
-                    text: "#/components/schemas/TextEmbeddingJobPayload"
-                    image: "#/components/schemas/ImageEmbeddingJobPayload"
-                    text_image: "#/components/schemas/TextImageEmbeddingJobPayload"
-
-        TextEmbeddingJobPayload:
-            type: object
-            required: [kind, text]
             properties:
-                kind:
-                    type: string
-                    enum: [text]
-                text:
-                    $ref: "#/components/schemas/EmbeddingText"
-
-        ImageEmbeddingJobPayload:
-            type: object
-            required: [kind, image_paths]
-            properties:
-                kind:
-                    type: string
-                    enum: [image]
-                image_paths:
-                    $ref: "#/components/schemas/EmbeddingImagePaths"
-
-        TextImageEmbeddingJobPayload:
-            type: object
-            required: [kind, text, image_paths]
-            properties:
-                kind:
-                    type: string
-                    enum: [text_image]
                 text:
                     $ref: "#/components/schemas/EmbeddingText"
                 image_paths:
