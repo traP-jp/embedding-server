@@ -23,9 +23,10 @@ var (
 type EmbeddingJobStatus string
 
 const (
-	EmbeddingJobStatusPending   EmbeddingJobStatus = "pending"
-	EmbeddingJobStatusCompleted EmbeddingJobStatus = "completed"
-	EmbeddingJobStatusFailed    EmbeddingJobStatus = "failed"
+	EmbeddingJobStatusPending    EmbeddingJobStatus = "pending"
+	EmbeddingJobStatusProcessing EmbeddingJobStatus = "processing"
+	EmbeddingJobStatusCompleted  EmbeddingJobStatus = "completed"
+	EmbeddingJobStatusFailed     EmbeddingJobStatus = "failed"
 )
 
 type EmbeddingJobState struct {
@@ -35,10 +36,11 @@ type EmbeddingJobState struct {
 
 type EmbeddingJobRepository interface {
 	EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error)
-	CreatePendingJob(ctx context.Context, payload json.RawMessage) (uuid.UUID, error)
-	CreatePendingJobWithID(ctx context.Context, id uuid.UUID, payload json.RawMessage) error
+	CreatePendingJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error
 	ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error)
 	EmbeddingJobResult(ctx context.Context, id uuid.UUID) (EmbeddingJobState, error)
 	Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error
 	Fail(ctx context.Context, id uuid.UUID) error
+	CountPendingJobs(ctx context.Context) (int, error)
+	DeleteJob(ctx context.Context, id uuid.UUID) error
 }

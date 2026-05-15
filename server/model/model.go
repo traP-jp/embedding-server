@@ -12,13 +12,12 @@ import (
 
 // EmbeddingJob は埋め込みジョブ行（GORM AutoMigrate で作成）。
 type EmbeddingJob struct {
-	ID          uuid.UUID                     `gorm:"type:uuid;primaryKey"`
-	Payload     datatypes.JSON                `gorm:"type:jsonb;not null"`
-	Result      datatypes.JSON                `gorm:"type:jsonb"`
-	Status      repository.EmbeddingJobStatus `gorm:"not null;default:pending"`
-	CreatedAt   time.Time                     `gorm:"not null;autoCreateTime"`
-	StartedAt   *time.Time
-	CompletedAt *time.Time
+	ID        uuid.UUID                     `gorm:"type:uuid;primaryKey"`
+	Payload   datatypes.JSON                `gorm:"type:jsonb;not null"`
+	Result    datatypes.JSON                `gorm:"type:jsonb"`
+	Status    repository.EmbeddingJobStatus `gorm:"not null;default:pending;index"`
+	CreatedAt time.Time                     `gorm:"not null;autoCreateTime"`
+	StartedAt *time.Time
 }
 
 func (j *EmbeddingJob) BeforeCreate(_ *gorm.DB) error {

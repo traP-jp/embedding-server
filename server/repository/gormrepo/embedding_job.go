@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -38,9 +37,9 @@ func (r *Repository) CreatePendingJob(ctx context.Context, id uuid.UUID, payload
 func (r *Repository) ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error) {
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job model.EmbeddingJob
-		const q = `
+	const q = `
 UPDATE embedding_jobs AS j
-SET started_at = NOW()
+SET status = ?, started_at = NOW()
 WHERE j.id = (
 	SELECT id FROM embedding_jobs
 	WHERE status = ? AND started_at IS NULL
@@ -51,7 +50,11 @@ WHERE j.id = (
 AND j.status = ?
 AND j.started_at IS NULL
 RETURNING id, payload, status, created_at, started_at, completed_at`
-		res := tx.Raw(q, repository.EmbeddingJobStatusPending, repository.EmbeddingJobStatusPending).Scan(&job)
+		res := tx.Raw(q,
+			repository.EmbeddingJobStatusProcessing,
+			repository.EmbeddingJobStatusPending,
+			repository.EmbeddingJobStatusPending,
+		).Scan(&job)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -84,16 +87,14 @@ func (r *Repository) EmbeddingJobResult(ctx context.Context, id uuid.UUID) (repo
 }
 
 func (r *Repository) Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error {
-	now := time.Now()
 	updates := map[string]any{
-		"status":       repository.EmbeddingJobStatusCompleted,
-		"completed_at": now,
+		"status": repository.EmbeddingJobStatusCompleted,
 	}
 	if len(result) > 0 {
 		updates["result"] = datatypes.JSON(result)
 	}
 	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ? AND started_at IS NOT NULL", id, repository.EmbeddingJobStatusPending).
+		Where("id = ? AND status = ?", id, repository.EmbeddingJobStatusProcessing).
 		Updates(updates)
 	if res.Error != nil {
 		return res.Error
@@ -105,12 +106,10 @@ func (r *Repository) Complete(ctx context.Context, id uuid.UUID, result json.Raw
 }
 
 func (r *Repository) Fail(ctx context.Context, id uuid.UUID) error {
-	now := time.Now()
 	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ? AND started_at IS NOT NULL", id, repository.EmbeddingJobStatusPending).
+		Where("id = ? AND status = ?", id, repository.EmbeddingJobStatusProcessing).
 		Updates(map[string]any{
-			"status":       repository.EmbeddingJobStatusFailed,
-			"completed_at": now,
+			"status": repository.EmbeddingJobStatusFailed,
 		})
 	if res.Error != nil {
 		return res.Error
