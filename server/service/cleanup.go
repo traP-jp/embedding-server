@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -31,14 +31,17 @@ func (s *CleanupService) Run(ctx context.Context) {
 	imageTicker := time.NewTicker(imageRetentionPeriod)
 	defer imageTicker.Stop()
 
-	log.Printf("cleanup service started: imageRetention=%s jobTTL=%s", imageRetentionPeriod, jobTTL)
+	slog.Info("cleanup service started",
+		slog.String("image_retention", imageRetentionPeriod.String()),
+		slog.String("job_ttl", jobTTL.String()),
+	)
 
 	s.cleanupExpiredJobs(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("cleanup service stopped")
+			slog.Info("cleanup service stopped")
 			return
 		case <-jobTicker.C:
 			s.cleanupExpiredJobs(ctx)
@@ -51,11 +54,11 @@ func (s *CleanupService) Run(ctx context.Context) {
 func (s *CleanupService) cleanupExpiredJobs(ctx context.Context) {
 	deleted, err := s.repo.CleanupExpiredJobs(ctx, jobTTL)
 	if err != nil {
-		log.Printf("cleanup expired jobs: %v", err)
+		slog.Error("cleanup expired jobs", slog.Any("error", err))
 		return
 	}
 	if deleted > 0 {
-		log.Printf("cleanup expired jobs: deleted=%d", deleted)
+		slog.Info("cleanup expired jobs", slog.Int64("deleted", deleted))
 	}
 }
 
@@ -65,7 +68,7 @@ func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
 		if os.IsNotExist(err) {
 			return
 		}
-		log.Printf("cleanup read dir: %v", err)
+		slog.Error("cleanup read dir", slog.Any("error", err))
 		return
 	}
 
@@ -79,14 +82,14 @@ func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
 
 		info, err := entry.Info()
 		if err != nil {
-			log.Printf("cleanup stat dir=%s: %v", entry.Name(), err)
+			slog.Error("cleanup stat", slog.String("dir", entry.Name()), slog.Any("error", err))
 			continue
 		}
 
 		if info.ModTime().Before(cutoff) {
 			path := filepath.Join(s.jobDir, entry.Name())
 			if err := os.RemoveAll(path); err != nil {
-				log.Printf("cleanup remove dir=%s: %v", entry.Name(), err)
+				slog.Error("cleanup remove", slog.String("dir", entry.Name()), slog.Any("error", err))
 				continue
 			}
 
@@ -95,6 +98,6 @@ func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
 	}
 
 	if cleaned > 0 {
-		log.Printf("cleanup image dirs: cleaned=%d", cleaned)
+		slog.Info("cleanup image dirs", slog.Int("cleaned", cleaned))
 	}
 }

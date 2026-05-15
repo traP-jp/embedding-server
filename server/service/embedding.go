@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,9 +48,9 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 			if err := json.Unmarshal(raw, &result); err == nil {
 				return result, nil
 			}
-			log.Printf("cache parse text: %v", err)
+			slog.Error("cache parse text", slog.Any("error", err))
 		} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) {
-			log.Printf("cache get text: %v", err)
+			slog.Error("cache get text", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		}
 	}
@@ -64,7 +64,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	if len(images) > 0 {
 		imagePaths, err := writeJobImages(id, images)
 		if err != nil {
-			log.Printf("write embedding job: %v", err)
+			slog.Error("write embedding job", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		}
 		payloadBody.ImagePaths = &imagePaths
@@ -72,17 +72,17 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 
 	payload, err := json.Marshal(payloadBody)
 	if err != nil {
-		log.Printf("marshal embedding job: %v", err)
+		slog.Error("marshal embedding job", slog.Any("error", err))
 		if err := RemoveJobImageDir(id); err != nil {
-			log.Printf("cleanup image job dir id=%s: %v", id, err)
+			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
 		return api.EmbeddingResult{}, err
 	}
 
 	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
-		log.Printf("create embedding job: %v", err)
+		slog.Error("create embedding job", slog.Any("error", err))
 		if err := RemoveJobImageDir(id); err != nil {
-			log.Printf("cleanup image job dir id=%s: %v", id, err)
+			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
 		return api.EmbeddingResult{}, err
 	}
@@ -125,7 +125,7 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	}
 	if err != nil {
-		log.Printf("wait embedding result: %v", err)
+		slog.Error("wait embedding result", slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
 
@@ -141,7 +141,7 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 
 	var result api.EmbeddingResult
 	if err := json.Unmarshal(job.Result, &result); err != nil {
-		log.Printf("parse embedding result: %v", err)
+		slog.Error("parse embedding result", slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
 

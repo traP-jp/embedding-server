@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/labstack/echo/v4"
@@ -15,10 +14,15 @@ import (
 	"embedding-server/api/service"
 )
 
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	Level: slog.LevelInfo,
+}))
+
 func main() {
 	db, err := gormrepo.GetDBClient()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("failed to connect database", slog.Any("error", err))
+		os.Exit(1)
 	}
 	notifier := service.NewLocalJobNotifier()
 
@@ -47,13 +51,21 @@ func main() {
 		LogRequestID: true,
 		HandleError:  true,
 		LogValuesFunc: func(c echo.Context, v mid.RequestLoggerValues) error {
-			message := fmt.Sprintf("%s %s status=%d latency=%s", v.Method, v.URI, v.Status, v.Latency)
+			attrs := []any{
+				slog.String("method", v.Method),
+				slog.String("uri", v.URI),
+				slog.Int("status", v.Status),
+				slog.Duration("latency", v.Latency),
+				slog.String("remote_ip", v.RemoteIP),
+				slog.String("request_id", v.RequestID),
+			}
 			if v.Error == nil {
-				c.Logger().Info(message)
+				logger.Info("request", attrs...)
 				return nil
 			}
 
-			c.Logger().Errorf("%s err=%v", message, v.Error)
+			attrs = append(attrs, slog.Any("error", v.Error))
+			logger.Error("request", attrs...)
 			return v.Error
 		},
 	}))
@@ -64,6 +76,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("listening on %s", port)
+	logger.Info("listening", slog.String("port", port))
 	e.Logger.Fatal(e.Start(":" + port))
 }

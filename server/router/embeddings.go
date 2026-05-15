@@ -2,266 +2,161 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"embedding-server/api/api"
-	"embedding-server/api/repository"
+	"embedding-server/api/service"
 )
 
-const maxImageUploadBytes = 25 << 20 // 25 MiB
+// traqの画像の上限が20MB程度なので、同程度の上限を設ける。
+const maxImageUploadBytes = 20 << 20 // 20 MiB
 
-const syncEmbeddingWaitTimeout = 30 * time.Second
+// workerが30s timeoutで処理するため、30件以上pendingがあれば503を返す。
+const maxPendingJobs = 30
 
-type waitResult struct {
-	result api.EmbeddingResult
-	status int
-	err    error
-}
+const retryAfterSeconds = 30
 
-func (h *Handlers) waitEmbeddingResult(ctx context.Context, id int64) waitResult {
-	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
-	defer deadline.Stop()
-	tick := time.NewTicker(100 * time.Millisecond)
-	defer tick.Stop()
-
-	for {
-		raw, ok, err := h.Repo.EmbeddingJobResult(ctx, id)
-		if err != nil && !errors.Is(err, repository.ErrEmbeddingJobNotFound) {
-			log.Printf("wait embedding result: %v", err)
-			return waitResult{status: http.StatusInternalServerError, err: err}
-		}
-		if ok {
-			result, err := parseEmbeddingResult(raw)
-			if err != nil {
-				log.Printf("parse embedding result: %v", err)
-				return waitResult{status: http.StatusInternalServerError, err: err}
-			}
-			return waitResult{result: result, status: http.StatusOK}
-		}
-
-		select {
-		case <-ctx.Done():
-			return waitResult{status: http.StatusInternalServerError, err: ctx.Err()}
-		case <-deadline.C:
-			return waitResult{status: http.StatusGatewayTimeout}
-		case <-tick.C:
-		}
-	}
-}
-
-func parseEmbeddingResult(raw json.RawMessage) (api.EmbeddingResult, error) {
-	var result api.EmbeddingResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return api.EmbeddingResult{}, err
-	}
-	return result, nil
-}
-
-func textEmbeddingWaitResponse(w waitResult) api.PostEmbeddingsTextResponseObject {
-	switch w.status {
-	case http.StatusOK:
-		return api.PostEmbeddingsText200JSONResponse(w.result)
-	case http.StatusGatewayTimeout:
-		return api.PostEmbeddingsText504JSONResponse{Message: "job processing timed out"}
-	default:
-		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}
-	}
-}
-
-func imageEmbeddingWaitResponse(w waitResult) api.PostEmbeddingsImageResponseObject {
-	switch w.status {
-	case http.StatusOK:
-		return api.PostEmbeddingsImage200JSONResponse(w.result)
-	case http.StatusGatewayTimeout:
-		return api.PostEmbeddingsImage504JSONResponse{Message: "job processing timed out"}
-	default:
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}
-	}
-}
-
-func textImageEmbeddingWaitResponse(w waitResult) api.PostEmbeddingsTextImageResponseObject {
-	switch w.status {
-	case http.StatusOK:
-		return api.PostEmbeddingsTextImage200JSONResponse(w.result)
-	case http.StatusGatewayTimeout:
-		return api.PostEmbeddingsTextImage504JSONResponse{Message: "job processing timed out"}
-	default:
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}
-	}
-}
+var (
+	errImageTooLarge        = errors.New("image too large")
+	errUnsupportedImageType = errors.New("unsupported image type")
+	errTooManyImages        = errors.New("too many images")
+)
 
 // PostEmbeddingsText はテキスト埋め込み用ジョブを作成する。
 // 内部キャッシュに同一テキストの結果があればジョブを張らず完了行のみ作成する。
 func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbeddingsTextRequestObject) (api.PostEmbeddingsTextResponseObject, error) {
-	if req.Body == nil {
-		return api.PostEmbeddingsText400JSONResponse{Message: "invalid json"}, nil
+	count, err := h.repo.CountPendingJobs(ctx)
+	if err != nil {
+		slog.Error("count pending jobs", slog.Any("error", err))
+		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}, nil
 	}
-	text := strings.TrimSpace(req.Body.Text)
-	if text == "" {
+	if count >= maxPendingJobs {
+		return api.PostEmbeddingsText503JSONResponse{
+			Body:    api.ErrorResponse{Message: "too many pending jobs"},
+			Headers: api.PostEmbeddingsText503ResponseHeaders{RetryAfter: retryAfterSeconds},
+		}, nil
+	}
+
+	result, err := h.Embedding.CreateEmbedding(ctx, req.Body.Text, nil)
+	switch {
+	case err == nil:
+		return api.PostEmbeddingsText200JSONResponse(result), nil
+	case errors.Is(err, service.ErrEmbeddingInputRequired):
 		return api.PostEmbeddingsText400JSONResponse{Message: "text required"}, nil
-	}
-
-	key := repository.TextEmbeddingCacheKey(text)
-	if raw, err := h.Repo.CacheGet(ctx, key); err == nil {
-		result, err := parseEmbeddingResult(raw)
-		if err == nil {
-			return api.PostEmbeddingsText200JSONResponse(result), nil
-		}
-		log.Printf("cache parse text: %v", err)
-	} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) {
-		log.Printf("cache get text: %v", err)
+	case errors.Is(err, service.ErrEmbeddingTimeout):
+		return api.PostEmbeddingsText504JSONResponse{Message: "job processing timed out"}, nil
+	default:
 		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}, nil
 	}
-
-	payload, err := json.Marshal(map[string]string{
-		"kind": "text",
-		"text": text,
-	})
-	if err != nil {
-		log.Printf("marshal text job: %v", err)
-		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}, nil
-	}
-	id, err := h.Repo.CreatePendingJob(ctx, payload)
-	if err != nil {
-		log.Printf("create text job: %v", err)
-		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}, nil
-	}
-	return textEmbeddingWaitResponse(h.waitEmbeddingResult(ctx, id)), nil
 }
 
-// PostEmbeddingsImage は画像（multipart の image フィールド）の埋め込みジョブを作成する。
-func (h *Handlers) PostEmbeddingsImage(ctx context.Context, req api.PostEmbeddingsImageRequestObject) (api.PostEmbeddingsImageResponseObject, error) {
-	filename, raw, err := readMultipartImage(req.Body)
+// PostEmbeddingsImages は画像群の埋め込みジョブを作成する。
+func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddingsImagesRequestObject) (api.PostEmbeddingsImagesResponseObject, error) {
+	count, err := h.repo.CountPendingJobs(ctx)
 	if err != nil {
-		if errors.Is(err, errImageTooLarge) {
-			return api.PostEmbeddingsImage413JSONResponse{Message: "image too large"}, nil
-		}
-		return api.PostEmbeddingsImage400JSONResponse{Message: err.Error()}, nil
+		slog.Error("count pending jobs", slog.Any("error", err))
+		return api.PostEmbeddingsImages500JSONResponse{Message: "internal error"}, nil
+	}
+	if count >= maxPendingJobs {
+		return api.PostEmbeddingsImages503JSONResponse{
+			Body:    api.ErrorResponse{Message: "too many pending jobs"},
+			Headers: api.PostEmbeddingsImages503ResponseHeaders{RetryAfter: retryAfterSeconds},
+		}, nil
 	}
 
-	seedPayload, err := json.Marshal(map[string]any{"kind": "image"})
+	images, err := readMultipartImages(req.Body)
+	if errors.Is(err, errImageTooLarge) {
+		return api.PostEmbeddingsImages413JSONResponse{Message: "image too large"}, nil
+	}
+	if errors.Is(err, errUnsupportedImageType) {
+		return api.PostEmbeddingsImages400JSONResponse{Message: "unsupported image type"}, nil
+	}
+	if errors.Is(err, errTooManyImages) {
+		return api.PostEmbeddingsImages400JSONResponse{Message: "too many images"}, nil
+	}
 	if err != nil {
-		log.Printf("marshal image seed: %v", err)
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}, nil
+		return api.PostEmbeddingsImages400JSONResponse{Message: "invalid request"}, nil
 	}
-	id, err := h.Repo.CreateJobWithStatus(ctx, seedPayload, "uploading")
-	if err != nil {
-		log.Printf("create image job: %v", err)
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}, nil
+
+	result, err := h.Embedding.CreateEmbedding(ctx, "", images)
+	switch {
+	case err == nil:
+		return api.PostEmbeddingsImages200JSONResponse(result), nil
+	case errors.Is(err, service.ErrEmbeddingTimeout):
+		return api.PostEmbeddingsImages504JSONResponse{Message: "job processing timed out"}, nil
+	default:
+		return api.PostEmbeddingsImages500JSONResponse{Message: "internal error"}, nil
 	}
-	imagePath, err := writeJobImage(id, filename, raw)
-	if err != nil {
-		log.Printf("write image job: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}, nil
-	}
-	finalPayload, err := json.Marshal(map[string]any{
-		"kind":       "image",
-		"image_path": imagePath,
-	})
-	if err != nil {
-		log.Printf("marshal image job: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}, nil
-	}
-	if err := h.Repo.UpdatePayloadAndStatus(ctx, id, "uploading", "pending", finalPayload); err != nil {
-		log.Printf("update image payload: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsImage500JSONResponse{Message: "internal error"}, nil
-	}
-	return imageEmbeddingWaitResponse(h.waitEmbeddingResult(ctx, id)), nil
 }
 
-// PostEmbeddingsTextImage はテキストと画像をまとめた埋め込みジョブを作成する。
-func (h *Handlers) PostEmbeddingsTextImage(ctx context.Context, req api.PostEmbeddingsTextImageRequestObject) (api.PostEmbeddingsTextImageResponseObject, error) {
-	text, filename, raw, err := readMultipartTextImage(req.Body)
+// PostEmbeddingsMultimodal はテキスト・画像群の埋め込みジョブを作成する。
+func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmbeddingsMultimodalRequestObject) (api.PostEmbeddingsMultimodalResponseObject, error) {
+	count, err := h.repo.CountPendingJobs(ctx)
 	if err != nil {
-		if errors.Is(err, errImageTooLarge) {
-			return api.PostEmbeddingsTextImage413JSONResponse{Message: "image too large"}, nil
-		}
-		return api.PostEmbeddingsTextImage400JSONResponse{Message: err.Error()}, nil
+		slog.Error("count pending jobs", slog.Any("error", err))
+		return api.PostEmbeddingsMultimodal500JSONResponse{Message: "internal error"}, nil
+	}
+	if count >= maxPendingJobs {
+		return api.PostEmbeddingsMultimodal503JSONResponse{
+			Body:    api.ErrorResponse{Message: "too many pending jobs"},
+			Headers: api.PostEmbeddingsMultimodal503ResponseHeaders{RetryAfter: retryAfterSeconds},
+		}, nil
 	}
 
-	seedPayload, err := json.Marshal(map[string]any{
-		"kind": "text_image",
-		"text": text,
-	})
+	text, images, err := readMultipartMultimodal(req.Body)
+	if errors.Is(err, errImageTooLarge) {
+		return api.PostEmbeddingsMultimodal413JSONResponse{Message: "image too large"}, nil
+	}
+	if errors.Is(err, errUnsupportedImageType) {
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "unsupported image type"}, nil
+	}
+	if errors.Is(err, errTooManyImages) {
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "too many images"}, nil
+	}
 	if err != nil {
-		log.Printf("marshal text_image seed: %v", err)
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}, nil
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "invalid request"}, nil
 	}
-	id, err := h.Repo.CreateJobWithStatus(ctx, seedPayload, "uploading")
-	if err != nil {
-		log.Printf("create text_image job: %v", err)
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}, nil
+
+	var result api.EmbeddingResult
+	switch {
+	case len(images) == 0:
+		result, err = h.Embedding.CreateEmbedding(ctx, text, nil)
+	case text == "":
+		result, err = h.Embedding.CreateEmbedding(ctx, "", images)
+	default:
+		result, err = h.Embedding.CreateEmbedding(ctx, text, images)
 	}
-	imagePath, err := writeJobImage(id, filename, raw)
-	if err != nil {
-		log.Printf("write text_image job: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}, nil
+	switch {
+	case err == nil:
+		return api.PostEmbeddingsMultimodal200JSONResponse(result), nil
+	case errors.Is(err, service.ErrEmbeddingInputRequired):
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "text or images required"}, nil
+	case errors.Is(err, service.ErrEmbeddingTimeout):
+		return api.PostEmbeddingsMultimodal504JSONResponse{Message: "job processing timed out"}, nil
+	default:
+		return api.PostEmbeddingsMultimodal500JSONResponse{Message: "internal error"}, nil
 	}
-	finalPayload, err := json.Marshal(map[string]any{
-		"kind":       "text_image",
-		"text":       text,
-		"image_path": imagePath,
-	})
-	if err != nil {
-		log.Printf("marshal text_image job: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}, nil
-	}
-	if err := h.Repo.UpdatePayloadAndStatus(ctx, id, "uploading", "pending", finalPayload); err != nil {
-		log.Printf("update text_image payload: %v", err)
-		_ = h.Repo.FailUpload(ctx, id)
-		return api.PostEmbeddingsTextImage500JSONResponse{Message: "internal error"}, nil
-	}
-	return textImageEmbeddingWaitResponse(h.waitEmbeddingResult(ctx, id)), nil
 }
 
-var (
-	errImageFileRequired = errors.New("image file required")
-	errTextRequired      = errors.New("text required")
-	errImageTooLarge     = errors.New("image too large")
-)
+func readMultipartImages(reader *multipart.Reader) ([][]byte, error) {
+	_, images, err := readMultipartMultimodal(reader)
+	if err != nil {
+		return nil, err
+	}
+	if len(images) == 0 {
+		return nil, errors.New("images required")
+	}
+	return images, nil
+}
 
-func readMultipartImage(reader *multipart.Reader) (filename string, raw []byte, err error) {
+func readMultipartMultimodal(reader *multipart.Reader) (text string, images [][]byte, err error) {
 	if reader == nil {
 		return "", nil, errors.New("invalid multipart")
-	}
-	for {
-		part, err := reader.NextPart()
-		if errors.Is(err, io.EOF) {
-			return "", nil, errImageFileRequired
-		}
-		if err != nil {
-			return "", nil, errors.New("invalid multipart")
-		}
-		defer part.Close()
-		if part.FormName() != "image" {
-			continue
-		}
-		raw, err := readLimited(part, maxImageUploadBytes)
-		if err != nil {
-			return "", nil, err
-		}
-		return part.FileName(), raw, nil
-	}
-}
-
-func readMultipartTextImage(reader *multipart.Reader) (text string, filename string, raw []byte, err error) {
-	if reader == nil {
-		return "", "", nil, errors.New("invalid multipart")
 	}
 	for {
 		part, err := reader.NextPart()
@@ -269,7 +164,7 @@ func readMultipartTextImage(reader *multipart.Reader) (text string, filename str
 			break
 		}
 		if err != nil {
-			return "", "", nil, errors.New("invalid multipart")
+			return "", nil, errors.New("invalid multipart")
 		}
 		func() {
 			defer part.Close()
@@ -277,26 +172,33 @@ func readMultipartTextImage(reader *multipart.Reader) (text string, filename str
 			case "text":
 				b, readErr := io.ReadAll(io.LimitReader(part, 8193))
 				if readErr != nil || len(b) > 8192 {
-					err = errTextRequired
+					err = service.ErrEmbeddingInputRequired
 					return
 				}
 				text = strings.TrimSpace(string(b))
-			case "image":
-				filename = part.FileName()
-				raw, err = readLimited(part, maxImageUploadBytes)
+			case "images":
+				if len(images) >= 4 {
+					err = errTooManyImages
+					return
+				}
+				raw, readErr := readLimited(part, maxImageUploadBytes)
+				err = readErr
+				if err == nil {
+					err = validateImageType(raw)
+				}
+				if err == nil {
+					images = append(images, raw)
+				}
 			}
 		}()
 		if err != nil {
-			return "", "", nil, err
+			return "", nil, err
 		}
 	}
-	if text == "" {
-		return "", "", nil, errTextRequired
+	if text == "" && len(images) == 0 {
+		return "", nil, errors.New("text or images required")
 	}
-	if len(raw) == 0 {
-		return "", "", nil, errImageFileRequired
-	}
-	return text, filename, raw, nil
+	return text, images, nil
 }
 
 func readLimited(r io.Reader, limit int64) ([]byte, error) {
@@ -310,18 +212,11 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 	return raw, nil
 }
 
-func writeJobImage(jobID int64, filename string, raw []byte) (string, error) {
-	jobDir := filepath.Join("/data/jobs", strconv.FormatInt(jobID, 10))
-	if err := os.MkdirAll(jobDir, 0o755); err != nil {
-		return "", err
+func validateImageType(raw []byte) error {
+	switch http.DetectContentType(raw) {
+	case "image/png", "image/jpeg", "image/webp":
+		return nil
+	default:
+		return errUnsupportedImageType
 	}
-	ext := filepath.Ext(filename)
-	if ext == "" {
-		ext = ".bin"
-	}
-	path := filepath.Join(jobDir, "input"+ext)
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
 }
