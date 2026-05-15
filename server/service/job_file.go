@@ -42,7 +42,7 @@ func writeJobImages(jobID uuid.UUID, images [][]byte) ([]string, error) {
 	return paths, nil
 }
 
-func removeJobImageDir(jobID uuid.UUID) error {
+func RemoveJobImageDir(jobID uuid.UUID) error {
 	return os.RemoveAll(jobImageDir(jobID))
 }
 

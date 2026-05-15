@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"strings"
 
 	"embedding-server/api/api"
 	"embedding-server/api/repository"
+	"embedding-server/api/service"
 )
 
 // ClaimWorkerJob はワーカーが次のジョブを取りに来るエンドポイント。
@@ -68,23 +70,16 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
-	kind, err := payload.Discriminator()
-	if err != nil {
-		log.Printf("complete discriminator: %v", err)
-		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
-	}
-
 	// テキスト埋め込みジョブの結果はキャッシュする。
-	if kind == string(api.Text) {
-		textEmbedding, err := payload.AsTextEmbeddingJobPayload()
-		if err != nil {
-			log.Printf("complete text embedding: %v", err)
-			return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
-		}
-		if err := h.repo.TextEmbeddingCacheSet(ctx, textEmbedding.Text, resultRaw); err != nil {
+	if payload.Text != nil && strings.TrimSpace(*payload.Text) != "" && (payload.ImagePaths == nil || len(*payload.ImagePaths) == 0) {
+		if err := h.repo.TextEmbeddingCacheSet(ctx, *payload.Text, resultRaw); err != nil {
 			log.Printf("complete cache set: %v", err)
 			return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 		}
+	}
+
+	if err := service.RemoveJobImageDir(req.Id); err != nil {
+		log.Printf("complete cleanup image dir id=%s: %v", req.Id, err)
 	}
 
 	return api.CompleteWorkerJob204Response{}, nil
@@ -105,5 +100,10 @@ func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobReque
 	if h.notifier != nil {
 		h.notifier.Notify(req.Id)
 	}
+
+	if err := service.RemoveJobImageDir(req.Id); err != nil {
+		log.Printf("fail cleanup image dir id=%s: %v", req.Id, err)
+	}
+
 	return api.FailWorkerJob204Response{}, nil
 }

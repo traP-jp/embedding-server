@@ -73,7 +73,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	payload, err := json.Marshal(payloadBody)
 	if err != nil {
 		log.Printf("marshal embedding job: %v", err)
-		if cleanupErr := removeJobImageDir(id); cleanupErr != nil {
+		if cleanupErr := RemoveJobImageDir(id); cleanupErr != nil {
 			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
 		}
 		return api.EmbeddingResult{}, err
@@ -81,7 +81,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 
 	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
 		log.Printf("create embedding job: %v", err)
-		if cleanupErr := removeJobImageDir(id); cleanupErr != nil {
+		if cleanupErr := RemoveJobImageDir(id); cleanupErr != nil {
 			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
 		}
 		return api.EmbeddingResult{}, err
