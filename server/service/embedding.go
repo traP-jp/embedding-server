@@ -17,9 +17,9 @@ import (
 const syncEmbeddingWaitTimeout = 30 * time.Second
 
 var (
-	ErrTextRequired     = errors.New("text required")
-	ErrEmbeddingTimeout = errors.New("embedding timed out")
-	ErrNotifierRequired = errors.New("job notifier required")
+	ErrEmbeddingInputRequired = errors.New("embedding input required")
+	ErrEmbeddingTimeout       = errors.New("embedding timed out")
+	ErrNotifierRequired       = errors.New("job notifier required")
 )
 
 var (
@@ -35,96 +35,55 @@ func NewEmbeddingService(repo repository.Repository, notifier JobNotifier) *Embe
 	return &EmbeddingService{repo: repo, notifier: notifier}
 }
 
-func (s *EmbeddingService) CreateTextEmbedding(ctx context.Context, text string) (api.EmbeddingResult, error) {
+func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, images [][]byte) (api.EmbeddingResult, error) {
 	text = strings.TrimSpace(text)
-	if text == "" {
-		return api.EmbeddingResult{}, ErrTextRequired
+	if text == "" && len(images) == 0 {
+		return api.EmbeddingResult{}, ErrEmbeddingInputRequired
 	}
 
-	// 先にキャッシュを確認して、あればすぐ返す。なければジョブを作成する。
-	if raw, err := s.repo.TextEmbeddingCacheGet(ctx, text); err == nil {
-		result, err := parseEmbeddingResult(raw)
-		if err == nil {
-			return result, nil
+	if len(images) == 0 {
+		// テキストのみの場合は、先にキャッシュを確認して、あればすぐ返す
+		if raw, err := s.repo.TextEmbeddingCacheGet(ctx, text); err == nil {
+			result, err := parseEmbeddingResult(raw)
+			if err == nil {
+				return result, nil
+			}
+			log.Printf("cache parse text: %v", err)
+		} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) {
+			log.Printf("cache get text: %v", err)
+			return api.EmbeddingResult{}, err
 		}
-		log.Printf("cache parse text: %v", err)
-	} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) {
-		log.Printf("cache get text: %v", err)
-		return api.EmbeddingResult{}, err
 	}
 
-	payload, err := json.Marshal(map[string]string{
-		"kind": "text",
-		"text": text,
-	})
-	if err != nil {
-		log.Printf("marshal text job: %v", err)
-		return api.EmbeddingResult{}, err
-	}
-
-	// dbにjobを追加
-	id, err := s.repo.CreatePendingJob(ctx, payload)
-	if err != nil {
-		log.Printf("create text job: %v", err)
-		return api.EmbeddingResult{}, err
-	}
-
-	return s.waitEmbeddingResult(ctx, id)
-}
-
-func (s *EmbeddingService) CreateImageEmbedding(ctx context.Context, images [][]byte) (api.EmbeddingResult, error) {
-	id := uuid.New()
-	imagePaths, err := writeJobImages(id, images)
-	if err != nil {
-		log.Printf("write image job: %v", err)
-		return api.EmbeddingResult{}, err
-	}
-
-	payload, err := json.Marshal(map[string]any{
-		"kind":        "image",
-		"image_paths": imagePaths,
-	})
-	if err != nil {
-		log.Printf("marshal image job: %v", err)
-		_ = removeJobImageDir(id)
-		return api.EmbeddingResult{}, err
-	}
-	if err := s.repo.CreatePendingJobWithID(ctx, id, payload); err != nil {
-		log.Printf("create image job: %v", err)
-		_ = removeJobImageDir(id)
-		return api.EmbeddingResult{}, err
-	}
-
-	return s.waitEmbeddingResult(ctx, id)
-}
-
-func (s *EmbeddingService) CreateTextImageEmbedding(ctx context.Context, text string, images [][]byte) (api.EmbeddingResult, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return api.EmbeddingResult{}, ErrTextRequired
+	payloadBody := api.WorkerJobPayload{}
+	if text != "" {
+		payloadBody.Text = &text
 	}
 
 	id := uuid.New()
-	imagePaths, err := writeJobImages(id, images)
+	if len(images) > 0 {
+		imagePaths, err := writeJobImages(id, images)
+		if err != nil {
+			log.Printf("write embedding job: %v", err)
+			return api.EmbeddingResult{}, err
+		}
+		payloadBody.ImagePaths = &imagePaths
+	}
+
+	payload, err := json.Marshal(payloadBody)
 	if err != nil {
-		log.Printf("write text_image job: %v", err)
+		log.Printf("marshal embedding job: %v", err)
+		if cleanupErr := removeJobImageDir(id); cleanupErr != nil {
+			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
+		}
 		return api.EmbeddingResult{}, err
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"kind":        "text_image",
-		"text":        text,
-		"image_paths": imagePaths,
-	})
-	if err != nil {
-		log.Printf("marshal text_image job: %v", err)
-		_ = removeJobImageDir(id)
-		return api.EmbeddingResult{}, err
-	}
-
-	if err := s.repo.CreatePendingJobWithID(ctx, id, payload); err != nil {
-		log.Printf("create text_image job: %v", err)
-		_ = removeJobImageDir(id)
+	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
+		log.Printf("create embedding job: %v", err)
+		if cleanupErr := removeJobImageDir(id); cleanupErr != nil {
+			log.Printf("cleanup image job dir id=%s: %v", id, cleanupErr)
+		}
 		return api.EmbeddingResult{}, err
 	}
 
