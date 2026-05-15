@@ -28,11 +28,11 @@ func (j *EmbeddingJob) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// EmbeddingCache は embedding_caches テーブル（キー・JSON・任意の有効期限）。
+// EmbeddingCache は embedding_caches テーブル（LRU で削除する内部キャッシュ）。
 type EmbeddingCache struct {
-	Key       string         `gorm:"primaryKey"`
-	Value     datatypes.JSON `gorm:"type:jsonb;not null"`
-	ExpiresAt *time.Time     `gorm:"column:expires_at"`
+	Key            string         `gorm:"primaryKey"`
+	Value          datatypes.JSON `gorm:"type:jsonb;not null"`
+	LastAccessedAt time.Time      `gorm:"not null;autoCreateTime;default:CURRENT_TIMESTAMP;index"`
 }
 
 // migrate で自動的にテーブル作成されるモデルのリスト。
