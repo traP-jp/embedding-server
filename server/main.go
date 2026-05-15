@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -25,6 +26,11 @@ func main() {
 	embedding := service.NewEmbeddingService(repo, notifier)
 	handlers := router.GetHandlers(repo, notifier, embedding)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
+
+	ctx := context.Background()
+
+	cleanup := service.NewCleanupService("/data/jobs", repo)
+	go cleanup.Run(ctx)
 
 	e := echo.New()
 	e.HideBanner = true

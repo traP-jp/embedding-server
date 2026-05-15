@@ -26,18 +26,7 @@ func (r *Repository) EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (jso
 	return json.RawMessage(job.Payload), nil
 }
 
-func (r *Repository) CreatePendingJob(ctx context.Context, payload json.RawMessage) (uuid.UUID, error) {
-	job := model.EmbeddingJob{
-		Payload: datatypes.JSON(payload),
-		Status:  repository.EmbeddingJobStatusPending,
-	}
-	if err := r.db.WithContext(ctx).Create(&job).Error; err != nil {
-		return uuid.Nil, err
-	}
-	return job.ID, nil
-}
-
-func (r *Repository) CreatePendingJobWithID(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
+func (r *Repository) CreatePendingJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
 	job := model.EmbeddingJob{
 		ID:      id,
 		Payload: datatypes.JSON(payload),
@@ -130,4 +119,17 @@ func (r *Repository) Fail(ctx context.Context, id uuid.UUID) error {
 		return repository.ErrEmbeddingJobNotFound
 	}
 	return nil
+}
+
+func (r *Repository) CountPendingJobs(ctx context.Context) (int, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.EmbeddingJob{}).
+		Where("status = ?", repository.EmbeddingJobStatusPending).
+		Count(&count).Error
+	return int(count), err
+}
+
+func (r *Repository) DeleteJob(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&model.EmbeddingJob{}, id).Error
 }
