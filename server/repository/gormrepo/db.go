@@ -2,6 +2,8 @@ package gormrepo
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 
 	"gorm.io/driver/postgres"
@@ -19,15 +21,7 @@ func GetDBClient() (*gorm.DB, error) {
 		password := getenv("POSTGRES_PASSWORD", "password")
 		dbname := getenv("POSTGRES_DB", "embedding")
 		sslmode := getenv("POSTGRES_SSLMODE", "disable")
-		dsn = fmt.Sprintf(
-			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			host,
-			port,
-			user,
-			password,
-			dbname,
-			sslmode,
-		)
+		dsn = postgresDSN(user, password, host, port, dbname, sslmode)
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -55,4 +49,17 @@ func getenv(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func postgresDSN(user, password, host, port, dbname, sslmode string) string {
+	connURL := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   net.JoinHostPort(host, port),
+		Path:   dbname,
+	}
+	q := connURL.Query()
+	q.Set("sslmode", sslmode)
+	connURL.RawQuery = q.Encode()
+	return connURL.String()
 }
