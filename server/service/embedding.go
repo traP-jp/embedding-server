@@ -17,10 +17,13 @@ import (
 const syncEmbeddingWaitTimeout = 30 * time.Second
 
 var (
-	ErrTextRequired            = errors.New("text required")
-	ErrEmbeddingTimeout        = errors.New("embedding timed out")
-	ErrNotifierRequired        = errors.New("job notifier required")
-	ErrEmbeddingResultNotReady = errors.New("embedding result not ready after notification")
+	ErrTextRequired     = errors.New("text required")
+	ErrEmbeddingTimeout = errors.New("embedding timed out")
+	ErrNotifierRequired = errors.New("job notifier required")
+)
+
+var (
+	errEmbeddingResultNotReady = errors.New("embedding result not ready")
 )
 
 type EmbeddingService struct {
@@ -39,8 +42,7 @@ func (s *EmbeddingService) CreateTextEmbedding(ctx context.Context, text string)
 	}
 
 	// 先にキャッシュを確認して、あればすぐ返す。なければジョブを作成する。
-	key := repository.TextEmbeddingCacheKey(text)
-	if raw, err := s.repo.CacheGet(ctx, key); err == nil {
+	if raw, err := s.repo.TextEmbeddingCacheGet(ctx, text); err == nil {
 		result, err := parseEmbeddingResult(raw)
 		if err == nil {
 			return result, nil
@@ -141,7 +143,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 	// 結果がすでにできているかもしれないのでdbを見に行く
 	if result, err := s.readEmbeddingResult(ctx, id); err == nil {
 		return result, nil
-	} else if !errors.Is(err, ErrEmbeddingResultNotReady) {
+	} else if !errors.Is(err, errEmbeddingResultNotReady) {
 		return api.EmbeddingResult{}, err
 	}
 
@@ -151,7 +153,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 	// job完了通知がすでに来ているかもしれないのでdbをもう一度見に行く
 	if result, err := s.readEmbeddingResult(ctx, id); err == nil {
 		return result, nil
-	} else if !errors.Is(err, ErrEmbeddingResultNotReady) {
+	} else if !errors.Is(err, errEmbeddingResultNotReady) {
 		return api.EmbeddingResult{}, err
 	}
 
@@ -169,7 +171,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
 	job, err := s.repo.EmbeddingJobResult(ctx, id)
 	if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
-		return api.EmbeddingResult{}, ErrEmbeddingResultNotReady
+		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	}
 	if err != nil {
 		log.Printf("wait embedding result: %v", err)
@@ -180,10 +182,10 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 	case repository.EmbeddingJobStatusFailed:
 		return api.EmbeddingResult{}, repository.ErrEmbeddingJobFailed
 	case repository.EmbeddingJobStatusPending:
-		return api.EmbeddingResult{}, ErrEmbeddingResultNotReady
+		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	case repository.EmbeddingJobStatusCompleted:
 		if len(job.Result) == 0 {
-			return api.EmbeddingResult{}, ErrEmbeddingResultNotReady
+			return api.EmbeddingResult{}, errEmbeddingResultNotReady
 		}
 	}
 

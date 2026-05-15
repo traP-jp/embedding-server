@@ -10,9 +10,14 @@ import (
 )
 
 var (
-	ErrNoJob                = errors.New("no job available")
+	// ErrNoJob はこれ以上処理すべきジョブがないことを表す。
+	ErrNoJob = errors.New("no job available")
+
+	// ErrEmbeddingJobNotFound はジョブIDに対応するジョブが見つからないことを表す。
 	ErrEmbeddingJobNotFound = errors.New("embedding job not found")
-	ErrEmbeddingJobFailed   = errors.New("embedding job failed")
+
+	// ErrEmbeddingJobFailed はジョブが失敗したことを表す。
+	ErrEmbeddingJobFailed = errors.New("embedding job failed")
 )
 
 type EmbeddingJobStatus string
