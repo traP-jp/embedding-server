@@ -396,7 +396,7 @@ func (response PostEmbeddingsImages500JSONResponse) VisitPostEmbeddingsImagesRes
 }
 
 type PostEmbeddingsImages503ResponseHeaders struct {
-	RetryAfter *int
+	RetryAfter int
 }
 
 type PostEmbeddingsImages503JSONResponse struct {
@@ -411,9 +411,7 @@ func (response PostEmbeddingsImages503JSONResponse) VisitPostEmbeddingsImagesRes
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
-	}
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -498,7 +496,7 @@ func (response PostEmbeddingsMultimodal500JSONResponse) VisitPostEmbeddingsMulti
 }
 
 type PostEmbeddingsMultimodal503ResponseHeaders struct {
-	RetryAfter *int
+	RetryAfter int
 }
 
 type PostEmbeddingsMultimodal503JSONResponse struct {
@@ -513,9 +511,7 @@ func (response PostEmbeddingsMultimodal503JSONResponse) VisitPostEmbeddingsMulti
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
-	}
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -586,7 +582,7 @@ func (response PostEmbeddingsText500JSONResponse) VisitPostEmbeddingsTextRespons
 }
 
 type PostEmbeddingsText503ResponseHeaders struct {
-	RetryAfter *int
+	RetryAfter int
 }
 
 type PostEmbeddingsText503JSONResponse struct {
@@ -601,9 +597,7 @@ func (response PostEmbeddingsText503JSONResponse) VisitPostEmbeddingsTextRespons
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
-	}
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
