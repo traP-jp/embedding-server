@@ -75,11 +75,11 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
 
-    /v1/embeddings/image:
+    /v1/embeddings/images:
         post:
-            operationId: postEmbeddingsImage
+            operationId: postEmbeddingsImages
             tags: [embeddings]
-            summary: 画像の埋め込みベクトルを返す
+            summary: 画像群の埋め込みベクトルを返す
             description: |
                 ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
             requestBody:
@@ -88,10 +88,13 @@ paths:
                     multipart/form-data:
                         schema:
                             type: object
-                            required: [image]
+                            required: [images]
                             properties:
-                                image:
-                                    $ref: "#/components/schemas/EmbeddingImageFile"
+                                images:
+                                    type: array
+                                    minItems: 1
+                                    items:
+                                        $ref: "#/components/schemas/EmbeddingImageFile"
             responses:
                 "200":
                     description: 埋め込みベクトル
@@ -100,7 +103,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/EmbeddingResult"
                 "400":
-                    description: multipart または image フィールドが不正です
+                    description: multipart または images フィールドが不正です
                     content:
                         application/json:
                             schema:
@@ -135,11 +138,11 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/ErrorResponse"
 
-    /v1/embeddings/text-image:
+    /v1/embeddings/text-images:
         post:
-            operationId: postEmbeddingsTextImage
+            operationId: postEmbeddingsTextImages
             tags: [embeddings]
-            summary: テキストと画像を合わせた埋め込みベクトルを返す
+            summary: テキストと画像群を合わせた埋め込みベクトルを返す
             description: |
                 ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
             requestBody:
@@ -148,12 +151,15 @@ paths:
                     multipart/form-data:
                         schema:
                             type: object
-                            required: [text, image]
+                            required: [text, images]
                             properties:
                                 text:
                                     $ref: "#/components/schemas/EmbeddingText"
-                                image:
-                                    $ref: "#/components/schemas/EmbeddingImageFile"
+                                images:
+                                    type: array
+                                    minItems: 1
+                                    items:
+                                        $ref: "#/components/schemas/EmbeddingImageFile"
             responses:
                 "200":
                     description: 埋め込みベクトル
@@ -162,7 +168,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/EmbeddingResult"
                 "400":
-                    description: text・image の指定が不正です
+                    description: text・images の指定が不正です
                     content:
                         application/json:
                             schema:
@@ -349,6 +355,13 @@ components:
             type: string
             description: worker が参照するローカルファイルパス
 
+        EmbeddingImagePaths:
+            type: array
+            minItems: 1
+            items:
+                $ref: "#/components/schemas/EmbeddingImagePath"
+            description: worker が参照するローカルファイルパスのリスト
+
         WorkerJobPayload:
             description: worker が処理するジョブ内容
             oneOf:
@@ -374,22 +387,22 @@ components:
 
         ImageEmbeddingJobPayload:
             type: object
-            required: [kind, image_path]
+            required: [kind, image_paths]
             properties:
                 kind:
                     type: string
                     enum: [image]
-                image_path:
-                    $ref: "#/components/schemas/EmbeddingImagePath"
+                image_paths:
+                    $ref: "#/components/schemas/EmbeddingImagePaths"
 
         TextImageEmbeddingJobPayload:
             type: object
-            required: [kind, text, image_path]
+            required: [kind, text, image_paths]
             properties:
                 kind:
                     type: string
                     enum: [text_image]
                 text:
                     $ref: "#/components/schemas/EmbeddingText"
-                image_path:
-                    $ref: "#/components/schemas/EmbeddingImagePath"
+                image_paths:
+                    $ref: "#/components/schemas/EmbeddingImagePaths"
