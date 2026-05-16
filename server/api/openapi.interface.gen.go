@@ -11,7 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/oapi-codegen/runtime"
 )
 
@@ -19,22 +19,22 @@ import (
 type ServerInterface interface {
 	// 次の pending ジョブをロックして取得
 	// (POST /internal/worker/jobs/claim)
-	ClaimWorkerJob(ctx echo.Context) error
+	ClaimWorkerJob(ctx *echo.Context) error
 	// ジョブを完了にする
 	// (POST /internal/worker/jobs/{id}/complete)
-	CompleteWorkerJob(ctx echo.Context, id JobId) error
+	CompleteWorkerJob(ctx *echo.Context, id JobId) error
 	// ジョブを失敗にする
 	// (POST /internal/worker/jobs/{id}/fail)
-	FailWorkerJob(ctx echo.Context, id JobId) error
+	FailWorkerJob(ctx *echo.Context, id JobId) error
 	// 画像群の埋め込みベクトルを返す
 	// (POST /v1/embeddings/images)
-	PostEmbeddingsImages(ctx echo.Context) error
+	PostEmbeddingsImages(ctx *echo.Context) error
 	// テキストと画像群を合わせた埋め込みベクトルを返す
 	// (POST /v1/embeddings/multimodal)
-	PostEmbeddingsMultimodal(ctx echo.Context) error
+	PostEmbeddingsMultimodal(ctx *echo.Context) error
 	// テキストの埋め込みベクトルを返す
 	// (POST /v1/embeddings/text)
-	PostEmbeddingsText(ctx echo.Context) error
+	PostEmbeddingsText(ctx *echo.Context) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -43,7 +43,7 @@ type ServerInterfaceWrapper struct {
 }
 
 // ClaimWorkerJob converts echo context to params.
-func (w *ServerInterfaceWrapper) ClaimWorkerJob(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) ClaimWorkerJob(ctx *echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -52,7 +52,7 @@ func (w *ServerInterfaceWrapper) ClaimWorkerJob(ctx echo.Context) error {
 }
 
 // CompleteWorkerJob converts echo context to params.
-func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx *echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id JobId
@@ -68,7 +68,7 @@ func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx echo.Context) error {
 }
 
 // FailWorkerJob converts echo context to params.
-func (w *ServerInterfaceWrapper) FailWorkerJob(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) FailWorkerJob(ctx *echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id JobId
@@ -84,7 +84,7 @@ func (w *ServerInterfaceWrapper) FailWorkerJob(ctx echo.Context) error {
 }
 
 // PostEmbeddingsImages converts echo context to params.
-func (w *ServerInterfaceWrapper) PostEmbeddingsImages(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) PostEmbeddingsImages(ctx *echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -93,7 +93,7 @@ func (w *ServerInterfaceWrapper) PostEmbeddingsImages(ctx echo.Context) error {
 }
 
 // PostEmbeddingsMultimodal converts echo context to params.
-func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx *echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -102,7 +102,7 @@ func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx echo.Context) erro
 }
 
 // PostEmbeddingsText converts echo context to params.
-func (w *ServerInterfaceWrapper) PostEmbeddingsText(ctx echo.Context) error {
+func (w *ServerInterfaceWrapper) PostEmbeddingsText(ctx *echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -114,15 +114,15 @@ func (w *ServerInterfaceWrapper) PostEmbeddingsText(ctx echo.Context) error {
 // are present on both echo.Echo and echo.Group, since we want to allow using
 // either of them for path registration
 type EchoRouter interface {
-	CONNECT(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	DELETE(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	GET(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	HEAD(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	OPTIONS(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	PATCH(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	POST(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	PUT(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	TRACE(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
+	CONNECT(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	DELETE(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	GET(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	HEAD(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	OPTIONS(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	PATCH(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	POST(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	PUT(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
+	TRACE(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) echo.RouteInfo
 }
 
 // RegisterHandlersOptions configures RegisterHandlersWithOptions.
@@ -639,7 +639,7 @@ type StrictServerInterface interface {
 	PostEmbeddingsText(ctx context.Context, request PostEmbeddingsTextRequestObject) (PostEmbeddingsTextResponseObject, error)
 }
 
-type StrictHandlerFunc func(ctx echo.Context, request any) (any, error)
+type StrictHandlerFunc func(ctx *echo.Context, request any) (any, error)
 type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
 
 func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc) ServerInterface {
@@ -652,10 +652,10 @@ type strictHandler struct {
 }
 
 // ClaimWorkerJob operation middleware
-func (sh *strictHandler) ClaimWorkerJob(ctx echo.Context) error {
+func (sh *strictHandler) ClaimWorkerJob(ctx *echo.Context) error {
 	var request ClaimWorkerJobRequestObject
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.ClaimWorkerJob(ctx.Request().Context(), request.(ClaimWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -675,7 +675,7 @@ func (sh *strictHandler) ClaimWorkerJob(ctx echo.Context) error {
 }
 
 // CompleteWorkerJob operation middleware
-func (sh *strictHandler) CompleteWorkerJob(ctx echo.Context, id JobId) error {
+func (sh *strictHandler) CompleteWorkerJob(ctx *echo.Context, id JobId) error {
 	var request CompleteWorkerJobRequestObject
 
 	request.Id = id
@@ -686,7 +686,7 @@ func (sh *strictHandler) CompleteWorkerJob(ctx echo.Context, id JobId) error {
 	}
 	request.Body = &body
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.CompleteWorkerJob(ctx.Request().Context(), request.(CompleteWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -706,12 +706,12 @@ func (sh *strictHandler) CompleteWorkerJob(ctx echo.Context, id JobId) error {
 }
 
 // FailWorkerJob operation middleware
-func (sh *strictHandler) FailWorkerJob(ctx echo.Context, id JobId) error {
+func (sh *strictHandler) FailWorkerJob(ctx *echo.Context, id JobId) error {
 	var request FailWorkerJobRequestObject
 
 	request.Id = id
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.FailWorkerJob(ctx.Request().Context(), request.(FailWorkerJobRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -731,7 +731,7 @@ func (sh *strictHandler) FailWorkerJob(ctx echo.Context, id JobId) error {
 }
 
 // PostEmbeddingsImages operation middleware
-func (sh *strictHandler) PostEmbeddingsImages(ctx echo.Context) error {
+func (sh *strictHandler) PostEmbeddingsImages(ctx *echo.Context) error {
 	var request PostEmbeddingsImagesRequestObject
 
 	if reader, err := ctx.Request().MultipartReader(); err != nil {
@@ -740,7 +740,7 @@ func (sh *strictHandler) PostEmbeddingsImages(ctx echo.Context) error {
 		request.Body = reader
 	}
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.PostEmbeddingsImages(ctx.Request().Context(), request.(PostEmbeddingsImagesRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -760,7 +760,7 @@ func (sh *strictHandler) PostEmbeddingsImages(ctx echo.Context) error {
 }
 
 // PostEmbeddingsMultimodal operation middleware
-func (sh *strictHandler) PostEmbeddingsMultimodal(ctx echo.Context) error {
+func (sh *strictHandler) PostEmbeddingsMultimodal(ctx *echo.Context) error {
 	var request PostEmbeddingsMultimodalRequestObject
 
 	if reader, err := ctx.Request().MultipartReader(); err != nil {
@@ -769,7 +769,7 @@ func (sh *strictHandler) PostEmbeddingsMultimodal(ctx echo.Context) error {
 		request.Body = reader
 	}
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.PostEmbeddingsMultimodal(ctx.Request().Context(), request.(PostEmbeddingsMultimodalRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -789,7 +789,7 @@ func (sh *strictHandler) PostEmbeddingsMultimodal(ctx echo.Context) error {
 }
 
 // PostEmbeddingsText operation middleware
-func (sh *strictHandler) PostEmbeddingsText(ctx echo.Context) error {
+func (sh *strictHandler) PostEmbeddingsText(ctx *echo.Context) error {
 	var request PostEmbeddingsTextRequestObject
 
 	var body PostEmbeddingsTextJSONRequestBody
@@ -798,7 +798,7 @@ func (sh *strictHandler) PostEmbeddingsText(ctx echo.Context) error {
 	}
 	request.Body = &body
 
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+	handler := func(ctx *echo.Context, request interface{}) (interface{}, error) {
 		return sh.ssi.PostEmbeddingsText(ctx.Request().Context(), request.(PostEmbeddingsTextRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
