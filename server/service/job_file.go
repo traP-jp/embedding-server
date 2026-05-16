@@ -10,11 +10,23 @@ import (
 	"github.com/google/uuid"
 )
 
+const defaultJobDataDir = "/data/jobs"
+
 var errUnsupportedJobImageType = errors.New("unsupported job image type")
 
-// 画像をローカルに保存する関数。将来はオブジェクトストレージにしてもいいかも
-func writeJobImages(jobID uuid.UUID, images [][]byte) ([]string, error) {
-	jobDir := jobImageDir(jobID)
+type JobFileService struct {
+	dataDir string
+}
+
+func NewJobFileService(dataDir string) *JobFileService {
+	if dataDir == "" {
+		dataDir = defaultJobDataDir
+	}
+	return &JobFileService{dataDir: dataDir}
+}
+
+func (s *JobFileService) WriteJobImages(jobID uuid.UUID, images [][]byte) ([]string, error) {
+	jobDir := s.jobImageDir(jobID)
 	if err := os.MkdirAll(jobDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -42,10 +54,14 @@ func writeJobImages(jobID uuid.UUID, images [][]byte) ([]string, error) {
 	return paths, nil
 }
 
-func RemoveJobImageDir(jobID uuid.UUID) error {
-	return os.RemoveAll(jobImageDir(jobID))
+func (s *JobFileService) RemoveJobImageDir(jobID uuid.UUID) error {
+	return os.RemoveAll(s.jobImageDir(jobID))
 }
 
-func jobImageDir(jobID uuid.UUID) string {
-	return filepath.Join("/data/jobs", jobID.String())
+func (s *JobFileService) DataDir() string {
+	return s.dataDir
+}
+
+func (s *JobFileService) jobImageDir(jobID uuid.UUID) string {
+	return filepath.Join(s.dataDir, jobID.String())
 }
