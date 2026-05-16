@@ -14,14 +14,16 @@ import (
 	"embedding-server/api/service"
 )
 
-var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-	Level: slog.LevelInfo,
-}))
-
 func main() {
+	opts := &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
+		AddSource: os.Getenv("APP_ENV") == "debug",
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
+
 	db, err := gormrepo.GetDBClient()
 	if err != nil {
-		logger.Error("failed to connect database", slog.Any("error", err))
+		slog.Error("failed to connect database", slog.Any("error", err))
 		os.Exit(1)
 	}
 
@@ -52,6 +54,7 @@ func main() {
 		LogStatus:        true,
 		LogRemoteIP:      true,
 		LogRequestID:     true,
+		HandleError:      true,
 		LogValuesFunc: func(c *echo.Context, v mid.RequestLoggerValues) error {
 			attrs := []any{
 				slog.String("method", v.Method),
@@ -62,13 +65,13 @@ func main() {
 				slog.String("request_id", v.RequestID),
 			}
 			if v.Error == nil {
-				logger.Info("request", attrs...)
+				slog.Info("request", attrs...)
 				return nil
 			}
 
 			attrs = append(attrs, slog.Any("error", v.Error))
-			logger.Error("request", attrs...)
-			return v.Error
+			slog.Error("request", attrs...)
+			return nil
 		},
 	}))
 	api.RegisterHandlers(e, strictHandlers)
@@ -78,9 +81,9 @@ func main() {
 		port = "8080"
 	}
 
-	logger.Info("listening", slog.String("port", port))
+	slog.Info("listening", slog.String("port", port))
 	if err := e.Start(":" + port); err != nil {
-		logger.Error("server error", slog.Any("error", err))
+		slog.Error("server error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }
