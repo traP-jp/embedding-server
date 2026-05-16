@@ -9,7 +9,6 @@ import (
 
 	"embedding-server/api/api"
 	"embedding-server/api/repository"
-	"embedding-server/api/service"
 )
 
 // ClaimWorkerJob はワーカーが次のジョブを取りに来るエンドポイント。
@@ -78,7 +77,7 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 		}
 	}
 
-	if err := service.RemoveJobImageDir(req.Id); err != nil {
+	if err := h.jobFile.RemoveJobImageDir(req.Id); err != nil {
 		slog.Error("complete cleanup image dir", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 	}
 
@@ -101,7 +100,7 @@ func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobReque
 		h.notifier.Notify(req.Id)
 	}
 
-	if err := service.RemoveJobImageDir(req.Id); err != nil {
+	if err := h.jobFile.RemoveJobImageDir(req.Id); err != nil {
 		slog.Error("fail cleanup image dir", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 	}
 

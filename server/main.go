@@ -48,13 +48,13 @@ func main() {
 	e := echo.New()
 
 	e.Use(mid.RequestLoggerWithConfig(mid.RequestLoggerConfig{
-		LogLatency:       true,
-		LogMethod:        true,
-		LogURI:           true,
-		LogStatus:        true,
-		LogRemoteIP:      true,
-		LogRequestID:     true,
-		HandleError:      true,
+		LogLatency:   true,
+		LogMethod:    true,
+		LogURI:       true,
+		LogStatus:    true,
+		LogRemoteIP:  true,
+		LogRequestID: true,
+		HandleError:  true,
 		LogValuesFunc: func(c *echo.Context, v mid.RequestLoggerValues) error {
 			attrs := []any{
 				slog.String("method", v.Method),

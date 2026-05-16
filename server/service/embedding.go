@@ -29,10 +29,11 @@ var (
 type EmbeddingService struct {
 	repo     repository.Repository
 	notifier JobNotifier
+	jobFile  *JobFileService
 }
 
-func NewEmbeddingService(repo repository.Repository, notifier JobNotifier) *EmbeddingService {
-	return &EmbeddingService{repo: repo, notifier: notifier}
+func NewEmbeddingService(repo repository.Repository, notifier JobNotifier, jobFile *JobFileService) *EmbeddingService {
+	return &EmbeddingService{repo: repo, notifier: notifier, jobFile: jobFile}
 }
 
 func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, images [][]byte) (api.EmbeddingResult, error) {
@@ -62,7 +63,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 
 	id := uuid.New()
 	if len(images) > 0 {
-		imagePaths, err := writeJobImages(id, images)
+		imagePaths, err := s.jobFile.WriteJobImages(id, images)
 		if err != nil {
 			slog.Error("write embedding job", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
@@ -73,7 +74,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 	payload, err := json.Marshal(payloadBody)
 	if err != nil {
 		slog.Error("marshal embedding job", slog.Any("error", err))
-		if err := RemoveJobImageDir(id); err != nil {
+		if err := s.jobFile.RemoveJobImageDir(id); err != nil {
 			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
 		return api.EmbeddingResult{}, err
@@ -81,7 +82,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 
 	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
 		slog.Error("create embedding job", slog.Any("error", err))
-		if err := RemoveJobImageDir(id); err != nil {
+		if err := s.jobFile.RemoveJobImageDir(id); err != nil {
 			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
 		return api.EmbeddingResult{}, err
