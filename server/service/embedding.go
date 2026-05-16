@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
 	"embedding-server/api/api"
@@ -16,8 +15,12 @@ import (
 
 const syncEmbeddingWaitTimeout = 30 * time.Second
 
+// workerが30s timeoutで処理するため、30件以上pendingがあれば受付を止める。
+const maxPendingEmbeddingJobs = 30
+
 var (
 	ErrEmbeddingInputRequired = errors.New("embedding input required")
+	ErrEmbeddingJobsFull      = errors.New("too many pending embedding jobs")
 	ErrEmbeddingTimeout       = errors.New("embedding timed out")
 	ErrNotifierRequired       = errors.New("job notifier required")
 )
@@ -36,34 +39,43 @@ func NewEmbeddingService(repo repository.Repository, notifier JobNotifier, jobFi
 	return &EmbeddingService{repo: repo, notifier: notifier, jobFile: jobFile}
 }
 
-func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, images [][]byte) (api.EmbeddingResult, error) {
-	text = strings.TrimSpace(text)
-	if text == "" && len(images) == 0 {
+// routerから呼ばれる関数。embeddingジョブを作成し、完了するまで待機する。
+func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingInput) (api.EmbeddingResult, error) {
+	if input.Text == "" && len(input.Images) == 0 {
 		return api.EmbeddingResult{}, ErrEmbeddingInputRequired
 	}
 
-	if len(images) == 0 {
-		// テキストのみの場合は、先にキャッシュを確認して、あればすぐ返す
-		if raw, err := s.repo.TextEmbeddingCacheGet(ctx, text); err == nil {
+	if input.Text != "" && len(input.Images) == 0 { // textのみの場合にキャッシュを確認する
+		raw, err := s.repo.TextEmbeddingCacheGet(ctx, input.Text)
+		if err == nil {
 			var result api.EmbeddingResult
 			if err := json.Unmarshal(raw, &result); err == nil {
 				return result, nil
 			}
 			slog.Error("cache parse text", slog.Any("error", err))
-		} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) {
+		} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) { // キャッシュがない以外のエラーはログに出す
 			slog.Error("cache get text", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		}
 	}
 
+	count, err := s.repo.CountPendingJobs(ctx)
+	if err != nil {
+		slog.Error("count pending jobs", slog.Any("error", err))
+		return api.EmbeddingResult{}, err
+	}
+	if count >= maxPendingEmbeddingJobs {
+		return api.EmbeddingResult{}, ErrEmbeddingJobsFull
+	}
+
 	payloadBody := api.WorkerJobPayload{}
-	if text != "" {
-		payloadBody.Text = &text
+	if input.Text != "" {
+		payloadBody.Text = &input.Text
 	}
 
 	id := uuid.New()
-	if len(images) > 0 {
-		imagePaths, err := s.jobFile.WriteJobImages(id, images)
+	if len(input.Images) > 0 {
+		imagePaths, err := s.jobFile.WriteJobImages(id, input.Images)
 		if err != nil {
 			slog.Error("write embedding job", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
@@ -93,12 +105,12 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, text string, ima
 
 // jobの終了を待つ。ジョブが完了していれば結果を返し、完了していなければ待機する。
 func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
-	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
-	defer deadline.Stop()
-
 	if s.notifier == nil {
 		return api.EmbeddingResult{}, ErrNotifierRequired
 	}
+
+	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
+	defer deadline.Stop()
 
 	ch, unsubscribe := s.notifier.Subscribe(id)
 	defer unsubscribe()
@@ -120,6 +132,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 
 }
 
+// dbのjobの状態がcompletedかどうかを確認する。
 func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
 	job, err := s.repo.EmbeddingJobResult(ctx, id)
 	if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
