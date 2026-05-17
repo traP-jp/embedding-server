@@ -12,4 +12,5 @@ var ErrCacheNotFound = errors.New("cache not found")
 type CacheRepository interface {
 	GetTextCache(ctx context.Context, text string) (json.RawMessage, error)
 	SetTextCache(ctx context.Context, text string, value json.RawMessage) error
+	PruneCache(ctx context.Context) error
 }

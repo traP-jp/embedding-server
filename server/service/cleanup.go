@@ -13,14 +13,15 @@ import (
 const (
 	imageRetentionPeriod = 6 * time.Hour
 	jobTTL               = 6 * time.Hour
+	cachePruneInterval   = 30 * time.Minute
 )
 
 type CleanupService struct {
 	jobDir string
-	repo   repository.JobRepository
+	repo   repository.Repository
 }
 
-func NewCleanupService(jobDir string, repo repository.JobRepository) *CleanupService {
+func NewCleanupService(jobDir string, repo repository.Repository) *CleanupService {
 	return &CleanupService{jobDir: jobDir, repo: repo}
 }
 
@@ -31,12 +32,17 @@ func (s *CleanupService) Run(ctx context.Context) {
 	imageTicker := time.NewTicker(imageRetentionPeriod)
 	defer imageTicker.Stop()
 
+	cacheTicker := time.NewTicker(cachePruneInterval)
+	defer cacheTicker.Stop()
+
 	slog.Info("cleanup service started",
 		slog.String("image_retention", imageRetentionPeriod.String()),
 		slog.String("job_ttl", jobTTL.String()),
+		slog.String("cache_prune_interval", cachePruneInterval.String()),
 	)
 
 	s.cleanupExpiredJobs(ctx)
+	s.pruneCache(ctx)
 
 	for {
 		select {
@@ -47,6 +53,8 @@ func (s *CleanupService) Run(ctx context.Context) {
 			s.cleanupExpiredJobs(ctx)
 		case <-imageTicker.C:
 			s.cleanupImageDirs(ctx)
+		case <-cacheTicker.C:
+			s.pruneCache(ctx)
 		}
 	}
 }
@@ -99,5 +107,11 @@ func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
 
 	if cleaned > 0 {
 		slog.Info("cleanup image dirs", slog.Int("cleaned", cleaned))
+	}
+}
+
+func (s *CleanupService) pruneCache(ctx context.Context) {
+	if err := s.repo.PruneCache(ctx); err != nil {
+		slog.Error("prune cache", slog.Any("error", err))
 	}
 }

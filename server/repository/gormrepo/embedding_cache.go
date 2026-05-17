@@ -51,7 +51,7 @@ func (r *Repository) SetTextCache(ctx context.Context, text string, value json.R
 	}); err != nil {
 		return err
 	}
-	return pruneEmbeddingCache(ctx, r.db, maxEmbeddingCacheEntries)
+	return nil
 }
 
 func textEmbeddingCacheKey(text string) string {
@@ -59,22 +59,22 @@ func textEmbeddingCacheKey(text string) string {
 	return "v1:text:" + hex.EncodeToString(sum[:])
 }
 
-func pruneEmbeddingCache(ctx context.Context, tx *gorm.DB, maxEntries int) error {
-	count, err := gorm.G[model.EmbeddingCache](tx).Count(ctx, "*")
+func (r *Repository) PruneCache(ctx context.Context) error {
+	count, err := gorm.G[model.EmbeddingCache](r.db).Count(ctx, "*")
 	if err != nil {
 		return err
 	}
-	excess := count - int64(maxEntries)
+	excess := count - int64(maxEmbeddingCacheEntries)
 	if excess <= 0 {
 		return nil
 	}
 
-	subquery := gorm.G[model.EmbeddingCache](tx).
+	subquery := gorm.G[model.EmbeddingCache](r.db).
 		Order("last_accessed_at ASC").
 		Limit(int(excess)).
 		Select("key")
 
-	_, err = gorm.G[model.EmbeddingCache](tx).
+	_, err = gorm.G[model.EmbeddingCache](r.db).
 		Where("key IN (?)", subquery).
 		Delete(ctx)
 	return err
