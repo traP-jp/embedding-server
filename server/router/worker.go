@@ -37,6 +37,10 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 // CompleteWorkerJob はジョブ成功完了を記録する。
 // JSON ボディに `result` がある場合、テキスト埋め込みジョブはサーバーが内部キャッシュへ保存する。
 func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorkerJobRequestObject) (api.CompleteWorkerJobResponseObject, error) {
+	if req.Body == nil || len(req.Body.Result.Vector) == 0 {
+		return api.CompleteWorkerJob400JSONResponse{Message: "result vector required"}, nil
+	}
+
 	rawPayload, err := h.repo.GetJobPayload(ctx, req.Id)
 	if errors.Is(err, repository.ErrJobNotFound) {
 		return api.CompleteWorkerJob404JSONResponse{Message: "not found"}, nil
