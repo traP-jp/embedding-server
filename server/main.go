@@ -76,7 +76,7 @@ func main() {
 	}))
 	api.RegisterHandlers(e, strictHandlers)
 
-	port := os.Getenv("PORT")
+	port := os.Getenv("API_PORT")
 	if port == "" {
 		port = "8080"
 	}

@@ -14,16 +14,13 @@ import (
 )
 
 func GetDBClient() (*gorm.DB, error) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		host := getenv("POSTGRES_HOST", "postgres")
-		port := getenv("POSTGRES_PORT", "5432")
-		user := getenv("POSTGRES_USER", "postgres")
-		password := getenv("POSTGRES_PASSWORD", "password")
-		dbname := getenv("POSTGRES_DB", "embedding")
-		sslmode := getenv("POSTGRES_SSLMODE", "disable")
-		dsn = postgresDSN(user, password, host, port, dbname, sslmode)
-	}
+	host := getenv("POSTGRES_HOST", "postgres")
+	port := getenv("POSTGRES_PORT", "5432")
+	user := getenv("POSTGRES_USER", "postgres")
+	password := getenv("POSTGRES_PASSWORD", "password")
+	dbname := getenv("POSTGRES_DB", "embedding")
+	sslmode := getenv("POSTGRES_SSLMODE", "disable")
+	dsn := postgresDSN(user, password, host, port, dbname, sslmode)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {

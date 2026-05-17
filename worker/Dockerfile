@@ -2,16 +2,50 @@
 # Python 3.12 / PyTorch 2.10 / ROCm 7.2（Hub: rocm/pytorch、タグは再現性のため固定。更新時は Docker Hub の tags を確認）
 FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.10.0
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
-
 WORKDIR /app
 
-ENV UV_COMPILE_BYTECODE=1 \
-	UV_LINK_MODE=copy \
-	PIP_NO_CACHE_DIR=1 \
-	PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1 \
+	PYTHONUNBUFFERED=1 \
+	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+	ATTN_IMPLEMENTATION=sdpa \
+	OCR_DEVICE=cuda
 
-COPY pyproject.toml uv.lock main.py ./
-RUN uv sync --frozen
+COPY pyproject.toml *.py ./
 
-CMD ["uv", "run", "python", "main.py"]
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1 \
+	&& rm -rf /var/lib/apt/lists/*
+
+# The base image already contains the ROCm-enabled torch build. Install Python
+# application dependencies into that interpreter instead of creating an isolated
+# venv that would hide the ROCm torch package.
+RUN python - <<'PY'
+import torch
+import torchvision
+
+if not torch.version.hip:
+    raise SystemExit(f"expected ROCm torch, got torch={torch.__version__}")
+print(f"base ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
+PY
+
+RUN python -m pip install --break-system-packages --no-cache-dir -e ".[runtime]" \
+	&& python - <<'PY'
+import torch
+import torchvision
+
+if not torch.version.hip:
+    raise SystemExit(f"expected ROCm torch, got torch={torch.__version__}")
+print(f"using ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
+PY
+
+RUN mkdir -p /app/scripts \
+	&& python - <<'PY'
+from pathlib import Path
+from urllib.request import urlopen
+
+url = "https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B/resolve/main/scripts/qwen3_vl_embedding.py"
+target = Path("/app/scripts/qwen3_vl_embedding.py")
+target.write_bytes(urlopen(url, timeout=60).read())
+PY
+
+CMD ["python", "main.py"]
