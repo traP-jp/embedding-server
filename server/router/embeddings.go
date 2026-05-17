@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"embedding-server/api/api"
 	"embedding-server/api/service"
@@ -37,6 +38,7 @@ func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbedding
 	case errors.Is(err, service.ErrEmbeddingTimeout):
 		return api.PostEmbeddingsText504JSONResponse{Message: "job processing timed out"}, nil
 	default:
+		slog.ErrorContext(ctx, "create embedding", slog.Any("error", err))
 		return api.PostEmbeddingsText500JSONResponse{Message: "internal error"}, nil
 	}
 }
@@ -77,6 +79,7 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 	case errors.Is(err, service.ErrEmbeddingTimeout):
 		return api.PostEmbeddingsImages504JSONResponse{Message: "job processing timed out"}, nil
 	default:
+		slog.ErrorContext(ctx, "create embedding", slog.Any("error", err))
 		return api.PostEmbeddingsImages500JSONResponse{Message: "internal error"}, nil
 	}
 }
@@ -119,6 +122,7 @@ func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmb
 	case errors.Is(err, service.ErrEmbeddingTimeout):
 		return api.PostEmbeddingsMultimodal504JSONResponse{Message: "job processing timed out"}, nil
 	default:
+		slog.ErrorContext(ctx, "create embedding", slog.Any("error", err))
 		return api.PostEmbeddingsMultimodal500JSONResponse{Message: "internal error"}, nil
 	}
 }
