@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -13,11 +14,13 @@ import (
 	"embedding-server/api/repository"
 )
 
-func (r *Repository) EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error) {
-	var job model.EmbeddingJob
-	err := r.db.WithContext(ctx).Select("payload").Where("id = ?", id).First(&job).Error
+func (r *Repository) GetJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error) {
+	job, err := gorm.G[model.EmbeddingJob](r.db).
+		Select("payload").
+		Where("id = ?", id).
+		First(ctx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, repository.ErrEmbeddingJobNotFound
+		return nil, repository.ErrJobNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -25,110 +28,104 @@ func (r *Repository) EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (jso
 	return json.RawMessage(job.Payload), nil
 }
 
-func (r *Repository) CreatePendingJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
-	job := model.EmbeddingJob{
+func (r *Repository) CreateJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
+	return gorm.G[model.EmbeddingJob](r.db).Create(ctx, &model.EmbeddingJob{
 		ID:      id,
 		Payload: datatypes.JSON(payload),
-		Status:  repository.EmbeddingJobStatusPending,
-	}
-	return r.db.WithContext(ctx).Create(&job).Error
+		Status:  repository.StatusPending,
+	})
 }
 
-func (r *Repository) ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error) {
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var job model.EmbeddingJob
-	const q = `
-UPDATE embedding_jobs AS j
-SET status = ?, started_at = NOW()
-WHERE j.id = (
-	SELECT id FROM embedding_jobs
-	WHERE status = ? AND started_at IS NULL
-	ORDER BY created_at ASC, id ASC
-	FOR UPDATE SKIP LOCKED
-	LIMIT 1
-)
-AND j.status = ?
-AND j.started_at IS NULL
-RETURNING id, payload, status, created_at, started_at, completed_at`
-		res := tx.Raw(q,
-			repository.EmbeddingJobStatusProcessing,
-			repository.EmbeddingJobStatusPending,
-			repository.EmbeddingJobStatusPending,
-		).Scan(&job)
-		if res.Error != nil {
-			return res.Error
-		}
-		if job.ID == uuid.Nil {
-			return repository.ErrNoJob
-		}
-		id = job.ID
-		payload = json.RawMessage(job.Payload)
-		return nil
-	})
-	if errors.Is(err, repository.ErrNoJob) {
+func (r *Repository) ClaimJob(ctx context.Context) (uuid.UUID, json.RawMessage, error) {
+	job, err := gorm.G[model.EmbeddingJob](r.db).
+		Select("id", "payload").
+		Where("status = ?", repository.StatusPending).
+		Order("created_at ASC, id ASC").
+		First(ctx)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return uuid.Nil, nil, repository.ErrNoJob
 	}
-	return id, payload, err
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+
+	rowsAffected, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("id = ? AND status = ?", job.ID, repository.StatusPending).
+		Updates(ctx, model.EmbeddingJob{
+			Status: repository.StatusProcessing,
+		})
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	if rowsAffected == 0 {
+		return uuid.Nil, nil, repository.ErrNoJob
+	}
+
+	return job.ID, json.RawMessage(job.Payload), nil
 }
 
-func (r *Repository) EmbeddingJobResult(ctx context.Context, id uuid.UUID) (repository.EmbeddingJobState, error) {
-	var job model.EmbeddingJob
-	err := r.db.WithContext(ctx).Select("status", "result").Where("id = ?", id).First(&job).Error
+func (r *Repository) GetJobState(ctx context.Context, id uuid.UUID) (repository.JobState, error) {
+	job, err := gorm.G[model.EmbeddingJob](r.db).
+		Select("status", "result").
+		Where("id = ?", id).
+		First(ctx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return repository.EmbeddingJobState{}, repository.ErrEmbeddingJobNotFound
+		return repository.JobState{}, repository.ErrJobNotFound
 	}
 	if err != nil {
-		return repository.EmbeddingJobState{}, err
+		return repository.JobState{}, err
 	}
-	return repository.EmbeddingJobState{
+	return repository.JobState{
 		Status: job.Status,
 		Result: json.RawMessage(job.Result),
 	}, nil
 }
 
-func (r *Repository) Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error {
-	updates := map[string]any{
-		"status": repository.EmbeddingJobStatusCompleted,
+func (r *Repository) CompleteJob(ctx context.Context, id uuid.UUID, result json.RawMessage) error {
+	if len(result) == 0 {
+		return errors.New("result is empty")
 	}
-	if len(result) > 0 {
-		updates["result"] = datatypes.JSON(result)
+	rowsAffected, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("id = ? AND status = ?", id, repository.StatusProcessing).
+		Updates(ctx, model.EmbeddingJob{
+			Status: repository.StatusCompleted,
+			Result: datatypes.JSON(result),
+		})
+	if err != nil {
+		return err
 	}
-	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, repository.EmbeddingJobStatusProcessing).
-		Updates(updates)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return repository.ErrEmbeddingJobNotFound
+	if rowsAffected == 0 {
+		return repository.ErrJobNotFound
 	}
 	return nil
 }
 
-func (r *Repository) Fail(ctx context.Context, id uuid.UUID) error {
-	res := r.db.WithContext(ctx).Model(&model.EmbeddingJob{}).
-		Where("id = ? AND status = ?", id, repository.EmbeddingJobStatusProcessing).
-		Updates(map[string]any{
-			"status": repository.EmbeddingJobStatusFailed,
+func (r *Repository) FailJob(ctx context.Context, id uuid.UUID) error {
+	rowsAffected, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("id = ? AND status = ?", id, repository.StatusProcessing).
+		Updates(ctx, model.EmbeddingJob{
+			Status: repository.StatusFailed,
 		})
-	if res.Error != nil {
-		return res.Error
+	if err != nil {
+		return err
 	}
-	if res.RowsAffected == 0 {
-		return repository.ErrEmbeddingJobNotFound
+	if rowsAffected == 0 {
+		return repository.ErrJobNotFound
 	}
 	return nil
 }
 
 func (r *Repository) CountPendingJobs(ctx context.Context) (int, error) {
-	var count int64
-	err := r.db.WithContext(ctx).
-		Model(&model.EmbeddingJob{}).
-		Where("status = ?", repository.EmbeddingJobStatusPending).
-		Count(&count).Error
+	count, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("status = ?", repository.StatusPending).
+		Count(ctx, "id")
 	return int(count), err
 }
 
-func (r *Repository) DeleteJob(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&model.EmbeddingJob{}, id).Error
+func (r *Repository) CleanupExpiredJobs(ctx context.Context, ttl time.Duration) (int64, error) {
+	expiredAt := time.Now().Add(-ttl)
+	rowsAffected, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("created_at < ?", expiredAt).
+		Delete(ctx)
+	return int64(rowsAffected), err
 }

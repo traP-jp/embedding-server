@@ -10,29 +10,25 @@ import (
 
 const retryAfterSeconds = 30
 
-// PostEmbeddingsText はテキスト埋め込み用ジョブを作成する。
-// 内部キャッシュに同一テキストの結果があればジョブを張らず完了行のみ作成する。
 func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbeddingsTextRequestObject) (api.PostEmbeddingsTextResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode: service.EmbeddingInputText,
 		Text: req.Body.Text,
 	})
-	if errors.Is(err, service.ErrEmbeddingTextTooLong) { // textが8192文字を超える場合
-		return api.PostEmbeddingsText400JSONResponse{Message: "text exceeds 8192 character limit"}, nil
-	}
-	if errors.Is(err, service.ErrEmbeddingInputRequired) { // textが空の場合
+	if errors.Is(err, service.ErrEmbeddingInputRequired) {
 		return api.PostEmbeddingsText400JSONResponse{Message: "text required"}, nil
 	}
+	if errors.Is(err, service.ErrEmbeddingTextTooLong) {
+		return api.PostEmbeddingsText400JSONResponse{Message: "text exceeds 8192 character limit"}, nil
+	}
 	if err != nil {
-		return api.PostEmbeddingsText400JSONResponse{Message: "invalid text"}, nil
+		return api.PostEmbeddingsText400JSONResponse{Message: "invalid request"}, nil
 	}
 
 	result, err := h.Embedding.CreateEmbedding(ctx, input)
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsText200JSONResponse(result), nil
-	case errors.Is(err, service.ErrEmbeddingInputRequired):
-		return api.PostEmbeddingsText400JSONResponse{Message: "text required"}, nil
 	case errors.Is(err, service.ErrEmbeddingJobsFull):
 		return api.PostEmbeddingsText503JSONResponse{
 			Body:    api.ErrorResponse{Message: "too many pending jobs"},
@@ -45,7 +41,6 @@ func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbedding
 	}
 }
 
-// PostEmbeddingsImages は画像群の埋め込みジョブを作成する。
 func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddingsImagesRequestObject) (api.PostEmbeddingsImagesResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode:      service.EmbeddingInputImages,
@@ -86,7 +81,6 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 	}
 }
 
-// PostEmbeddingsMultimodal はテキスト・画像群の埋め込みジョブを作成する。
 func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmbeddingsMultimodalRequestObject) (api.PostEmbeddingsMultimodalResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode:      service.EmbeddingInputMultimodal,

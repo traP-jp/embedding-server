@@ -14,35 +14,34 @@ var (
 	// ErrNoJob はこれ以上処理すべきジョブがないことを表す。
 	ErrNoJob = errors.New("no job available")
 
-	// ErrEmbeddingJobNotFound はジョブIDに対応するジョブが見つからないことを表す。
-	ErrEmbeddingJobNotFound = errors.New("embedding job not found")
+	// ErrJobNotFound はジョブIDに対応するジョブが見つからないことを表す。
+	ErrJobNotFound = errors.New("job not found")
 
-	// ErrEmbeddingJobFailed はジョブが失敗したことを表す。
-	ErrEmbeddingJobFailed = errors.New("embedding job failed")
+	// ErrJobFailed はジョブが失敗したことを表す。
+	ErrJobFailed = errors.New("job failed")
 )
 
-type EmbeddingJobStatus string
+type JobStatus string
 
 const (
-	EmbeddingJobStatusPending    EmbeddingJobStatus = "pending"
-	EmbeddingJobStatusProcessing EmbeddingJobStatus = "processing"
-	EmbeddingJobStatusCompleted  EmbeddingJobStatus = "completed"
-	EmbeddingJobStatusFailed     EmbeddingJobStatus = "failed"
+	StatusPending    JobStatus = "pending"
+	StatusProcessing JobStatus = "processing"
+	StatusCompleted  JobStatus = "completed"
+	StatusFailed     JobStatus = "failed"
 )
 
-type EmbeddingJobState struct {
-	Status EmbeddingJobStatus
+type JobState struct {
+	Status JobStatus
 	Result json.RawMessage
 }
 
-type EmbeddingJobRepository interface {
-	EmbeddingJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error)
-	CreatePendingJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error
-	ClaimNext(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error)
-	EmbeddingJobResult(ctx context.Context, id uuid.UUID) (EmbeddingJobState, error)
-	Complete(ctx context.Context, id uuid.UUID, result json.RawMessage) error
-	Fail(ctx context.Context, id uuid.UUID) error
+type JobRepository interface {
+	GetJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error)
+	CreateJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error
+	ClaimJob(ctx context.Context) (id uuid.UUID, payload json.RawMessage, err error)
+	GetJobState(ctx context.Context, id uuid.UUID) (JobState, error)
+	CompleteJob(ctx context.Context, id uuid.UUID, result json.RawMessage) error
+	FailJob(ctx context.Context, id uuid.UUID) error
 	CountPendingJobs(ctx context.Context) (int, error)
-	DeleteJob(ctx context.Context, id uuid.UUID) error
 	CleanupExpiredJobs(ctx context.Context, ttl time.Duration) (int64, error)
 }

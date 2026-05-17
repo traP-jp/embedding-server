@@ -46,14 +46,14 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 	}
 
 	if input.Text != "" && len(input.Images) == 0 { // textのみの場合にキャッシュを確認する
-		raw, err := s.repo.TextEmbeddingCacheGet(ctx, input.Text)
+		raw, err := s.repo.GetTextCache(ctx, input.Text)
 		if err == nil {
 			var result api.EmbeddingResult
 			if err := json.Unmarshal(raw, &result); err == nil {
 				return result, nil
 			}
 			slog.Error("cache parse text", slog.Any("error", err))
-		} else if !errors.Is(err, repository.ErrEmbeddingCacheNotFound) { // キャッシュがない以外のエラーはログに出す
+		} else if !errors.Is(err, repository.ErrCacheNotFound) { // キャッシュがない以外のエラーはログに出す
 			slog.Error("cache get text", slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		}
@@ -92,7 +92,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 		return api.EmbeddingResult{}, err
 	}
 
-	if err := s.repo.CreatePendingJob(ctx, id, payload); err != nil {
+	if err := s.repo.CreateJob(ctx, id, payload); err != nil {
 		slog.Error("create embedding job", slog.Any("error", err))
 		if err := s.jobFile.RemoveJobImageDir(id); err != nil {
 			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
@@ -134,8 +134,8 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 
 // dbのjobの状態がcompletedかどうかを確認する。
 func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
-	job, err := s.repo.EmbeddingJobResult(ctx, id)
-	if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
+	job, err := s.repo.GetJobState(ctx, id)
+	if errors.Is(err, repository.ErrJobNotFound) {
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	}
 	if err != nil {
@@ -144,13 +144,13 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 	}
 
 	switch job.Status {
-	case repository.EmbeddingJobStatusFailed:
-		return api.EmbeddingResult{}, repository.ErrEmbeddingJobFailed
-	case repository.EmbeddingJobStatusPending:
+	case repository.StatusFailed:
+		return api.EmbeddingResult{}, repository.ErrJobFailed
+	case repository.StatusPending:
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
-	case repository.EmbeddingJobStatusProcessing:
+	case repository.StatusProcessing:
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
-	case repository.EmbeddingJobStatusCompleted:
+	case repository.StatusCompleted:
 	}
 
 	var result api.EmbeddingResult

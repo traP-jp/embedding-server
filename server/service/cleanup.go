@@ -17,10 +17,10 @@ const (
 
 type CleanupService struct {
 	jobDir string
-	repo   repository.EmbeddingJobRepository
+	repo   repository.JobRepository
 }
 
-func NewCleanupService(jobDir string, repo repository.EmbeddingJobRepository) *CleanupService {
+func NewCleanupService(jobDir string, repo repository.JobRepository) *CleanupService {
 	return &CleanupService{jobDir: jobDir, repo: repo}
 }
 

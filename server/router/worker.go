@@ -13,7 +13,7 @@ import (
 
 // ClaimWorkerJob はワーカーが次のジョブを取りに来るエンドポイント。
 func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobRequestObject) (api.ClaimWorkerJobResponseObject, error) {
-	id, payloadRaw, err := h.repo.ClaimNext(ctx)
+	id, payloadRaw, err := h.repo.ClaimJob(ctx)
 	if errors.Is(err, repository.ErrNoJob) {
 		return api.ClaimWorkerJob204Response{}, nil
 	}
@@ -37,8 +37,8 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 // CompleteWorkerJob はジョブ成功完了を記録する。
 // JSON ボディに `result` がある場合、テキスト埋め込みジョブはサーバーが内部キャッシュへ保存する。
 func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorkerJobRequestObject) (api.CompleteWorkerJobResponseObject, error) {
-	rawPayload, err := h.repo.EmbeddingJobPayload(ctx, req.Id)
-	if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
+	rawPayload, err := h.repo.GetJobPayload(ctx, req.Id)
+	if errors.Is(err, repository.ErrJobNotFound) {
 		return api.CompleteWorkerJob404JSONResponse{Message: "not found"}, nil
 	}
 	if err != nil {
@@ -52,8 +52,8 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
-	if err := h.repo.Complete(ctx, req.Id, resultRaw); err != nil {
-		if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
+	if err := h.repo.CompleteJob(ctx, req.Id, resultRaw); err != nil {
+		if errors.Is(err, repository.ErrJobNotFound) {
 			return api.CompleteWorkerJob404JSONResponse{Message: "not found"}, nil
 		}
 		slog.Error("complete", slog.Any("error", err))
@@ -71,7 +71,7 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 
 	// テキスト埋め込みジョブの結果はキャッシュする。
 	if payload.Text != nil && strings.TrimSpace(*payload.Text) != "" && (payload.ImagePaths == nil || len(*payload.ImagePaths) == 0) {
-		if err := h.repo.TextEmbeddingCacheSet(ctx, *payload.Text, resultRaw); err != nil {
+		if err := h.repo.SetTextCache(ctx, *payload.Text, resultRaw); err != nil {
 			slog.Error("complete cache set", slog.Any("error", err))
 			return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 		}
@@ -87,8 +87,8 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 // FailWorkerJob はジョブ失敗を記録する。
 func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobRequestObject) (api.FailWorkerJobResponseObject, error) {
 
-	if err := h.repo.Fail(ctx, req.Id); err != nil {
-		if errors.Is(err, repository.ErrEmbeddingJobNotFound) {
+	if err := h.repo.FailJob(ctx, req.Id); err != nil {
+		if errors.Is(err, repository.ErrJobNotFound) {
 			return api.FailWorkerJob404JSONResponse{Message: "not found"}, nil
 		}
 

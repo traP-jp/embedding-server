@@ -12,3 +12,6 @@ tmp/
 
 # Virtual environments
 .venv
+.opencode
+opencode.json
+AGENT.md
