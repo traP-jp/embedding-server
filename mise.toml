@@ -4,10 +4,11 @@ go = "1.26.2"
 uv = "0.11"
 oapi-codegen = "2.7.0"
 
-[tasks.oapi-gen]
-description = "openapiからのコード生成"
+[tasks.gogen]
+description = "Goファイルの生成を実行"
 dir = "server"
 run = [
+    "go generate ./...",
     "oapi-codegen -config ./api/oapi.model.config.yaml ../openapi.yaml",
     "oapi-codegen -config ./api/oapi.interface.config.yaml ../openapi.yaml",
 ]
