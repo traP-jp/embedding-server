@@ -112,6 +112,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
 	defer deadline.Stop()
 
+	// Subscribeしてから結果を確認。これにより、Subscribe前にジョブが完了していた場合の通知取りこぼしを防ぐ。
 	ch, unsubscribe := s.notifier.Subscribe(id)
 	defer unsubscribe()
 

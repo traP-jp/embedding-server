@@ -11,6 +11,7 @@ import (
 
 const retryAfterSeconds = 30
 
+// PostEmbeddingsTextは、指定されたテキスト入力に対する埋め込みを生成する。
 func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbeddingsTextRequestObject) (api.PostEmbeddingsTextResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode: service.EmbeddingInputText,
@@ -26,7 +27,7 @@ func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbedding
 		return api.PostEmbeddingsText400JSONResponse{Message: "invalid request"}, nil
 	}
 
-	result, err := h.Embedding.CreateEmbedding(ctx, input)
+	result, err := h.embedding.CreateEmbedding(ctx, input)
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsText200JSONResponse(result), nil
@@ -43,6 +44,7 @@ func (h *Handlers) PostEmbeddingsText(ctx context.Context, req api.PostEmbedding
 	}
 }
 
+// PostEmbeddingsImagesは、指定された画像入力に対する埋め込みを生成する。
 func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddingsImagesRequestObject) (api.PostEmbeddingsImagesResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode:      service.EmbeddingInputImages,
@@ -67,7 +69,7 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 		return api.PostEmbeddingsImages400JSONResponse{Message: "invalid request"}, nil
 	}
 
-	result, err := h.Embedding.CreateEmbedding(ctx, input)
+	result, err := h.embedding.CreateEmbedding(ctx, input)
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsImages200JSONResponse(result), nil
@@ -84,6 +86,7 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 	}
 }
 
+// PostEmbeddingsMultimodalは、指定されたテキストおよび/または画像入力に対する埋め込みを生成する。
 func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmbeddingsMultimodalRequestObject) (api.PostEmbeddingsMultimodalResponseObject, error) {
 	input, err := service.ReadEmbeddingInput(service.EmbeddingInputRequest{
 		Mode:      service.EmbeddingInputMultimodal,
@@ -108,12 +111,10 @@ func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmb
 		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "invalid request"}, nil
 	}
 
-	result, err := h.Embedding.CreateEmbedding(ctx, input)
+	result, err := h.embedding.CreateEmbedding(ctx, input)
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsMultimodal200JSONResponse(result), nil
-	case errors.Is(err, service.ErrEmbeddingInputRequired):
-		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "text or images required"}, nil
 	case errors.Is(err, service.ErrEmbeddingJobsFull):
 		return api.PostEmbeddingsMultimodal503JSONResponse{
 			Body:    api.ErrorResponse{Message: "too many pending jobs"},

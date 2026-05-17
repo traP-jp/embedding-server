@@ -11,7 +11,8 @@ import (
 	"embedding-server/api/repository"
 )
 
-// ClaimWorkerJob はワーカーが次のジョブを取りに来るエンドポイント。
+// ClaimWorkerJobは、ワーカーが次に利用可能なジョブを取得するエンドポイントである。
+// 保留中のジョブがない場合は204を返す。
 func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobRequestObject) (api.ClaimWorkerJobResponseObject, error) {
 	id, payloadRaw, err := h.repo.ClaimJob(ctx)
 	if errors.Is(err, repository.ErrNoJob) {
@@ -34,8 +35,8 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 	}, nil
 }
 
-// CompleteWorkerJob はジョブ成功完了を記録する。
-// JSON ボディに `result` がある場合、テキスト埋め込みジョブはサーバーが内部キャッシュへ保存する。
+// CompleteWorkerJobは、ジョブの正常な完了を記録する。
+// ジョブペイロードがテキストのみの場合、サーバーはそれを内部にキャッシュする。
 func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorkerJobRequestObject) (api.CompleteWorkerJobResponseObject, error) {
 	if req.Body == nil || len(req.Body.Result.Vector) == 0 {
 		return api.CompleteWorkerJob400JSONResponse{Message: "result vector required"}, nil
@@ -76,8 +77,7 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 	// テキスト埋め込みジョブの結果はキャッシュする。
 	if payload.Text != nil && strings.TrimSpace(*payload.Text) != "" && (payload.ImagePaths == nil || len(*payload.ImagePaths) == 0) {
 		if err := h.repo.SetTextCache(ctx, *payload.Text, resultRaw); err != nil {
-			slog.Error("complete cache set", slog.Any("error", err))
-			return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
+			slog.Warn("complete cache set failed, continuing anyway", slog.Any("error", err))
 		}
 	}
 
@@ -88,7 +88,7 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 	return api.CompleteWorkerJob204Response{}, nil
 }
 
-// FailWorkerJob はジョブ失敗を記録する。
+// FailWorkerJobは、ジョブの失敗を記録し、関連リソースをクリーンアップする。
 func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobRequestObject) (api.FailWorkerJobResponseObject, error) {
 
 	if err := h.repo.FailJob(ctx, req.Id); err != nil {

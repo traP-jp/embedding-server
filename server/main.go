@@ -37,7 +37,7 @@ func main() {
 
 	repo := gormrepo.GetRepository(db)
 	embedding := service.NewEmbeddingService(repo, notifier, jobFile)
-	handlers := router.GetHandlers(repo, notifier, embedding, jobFile)
+	handlers := router.NewHandlers(repo, notifier, embedding, jobFile)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
 
 	ctx := context.Background()
