@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import json
+import logging
+import signal
+import time
+from typing import Any
+
+import httpx
+
+from embedding_engine import EmbeddingEngine
+from job_runner import run_job
+from ocr_engine import OcrEngine
+from worker_api import ApiClient
+from worker_config import Config
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("worker")
+
+_stop = False
+
+
+def _handle_signal(signum: int, _frame: Any) -> None:
+    global _stop
+    log.info("signal %s, draining current job", signum)
+    _stop = True
+
+
+def main() -> None:
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
+    try:
+        config = Config.from_env()
+    except ValueError as e:
+        log.error("missing worker configuration: %s", e)
+        raise SystemExit(1)
+
+    log.info("worker api=%s", config.api_base_url)
+
+    api = ApiClient(config.api_base_url)
+    ocr = OcrEngine(config)
+    embedder = EmbeddingEngine(config)
+
+    while not _stop:
+        try:
+            try:
+                # jobを取得してくる。なければNoneが返る。
+                job = api.claim()
+            except httpx.HTTPStatusError as e:
+                log.error("claim http=%s body=%s", e.response.status_code, e.response.content[:500])
+                time.sleep(2)
+                continue
+            except httpx.RequestError as e:
+                log.error("claim request error=%s", e)
+                time.sleep(2)
+                continue
+
+            if job is None:
+                time.sleep(config.poll_interval_seconds)
+                continue
+
+            run_job(api, embedder, ocr, job)
+        except json.JSONDecodeError as e:
+            log.warning("invalid json from api: %s", e)
+            time.sleep(1)
+        except Exception as e:
+            log.exception("worker loop error=%s", e)
+            time.sleep(2)
+
+    log.info("exit")
+
+
+if __name__ == "__main__":
+    main()

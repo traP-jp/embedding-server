@@ -3,4 +3,31 @@ name = "embedding-worker"
 version = "0.1.0"
 description = "Embedding queue worker (ROCm / PyTorch image at runtime)"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.0,<1",
+]
+
+[project.optional-dependencies]
+runtime = [
+    "accelerate>=1.0.0",
+    "numpy>=1.26.0",
+    "pillow>=10.0.0",
+    "qwen-vl-utils>=0.0.14",
+    "transformers>=4.57.0,<5",
+    "yomitoku>=0.13.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "embedding_engine",
+    "job_runner",
+    "main",
+    "ocr_engine",
+    "vector_math",
+    "worker_api",
+    "worker_config",
+]
