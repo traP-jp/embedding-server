@@ -16,8 +16,22 @@ def env_bool(name: str) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def optional_env_bool(name: str, fallback: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return fallback
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def env_int(name: str) -> int:
     return int(required_env(name))
+
+
+def optional_env_int(name: str, fallback: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return fallback
+    return int(raw)
 
 
 def env_float(name: str) -> float:
@@ -51,8 +65,8 @@ class Config:
             poll_interval_seconds=env_float("POLL_INTERVAL_SECONDS"), # ジョブが無いときの待機秒数
             torch_dtype=required_env("TORCH_DTYPE").lower(),
             attn_implementation=required_env("ATTN_IMPLEMENTATION"),
-            fake_embeddings=env_bool("EMBEDDING_WORKER_FAKE"), # 埋め込みを偽のものにするか
-            fake_embedding_dim=env_int("FAKE_EMBEDDING_DIM"),
+            fake_embeddings=optional_env_bool("EMBEDDING_WORKER_FAKE", False), # 埋め込みを偽のものにするか
+            fake_embedding_dim=optional_env_int("FAKE_EMBEDDING_DIM", 1024),
             ocr_enabled=env_bool("OCR_ENABLED"),
             ocr_device=required_env("OCR_DEVICE"),
             ocr_scale=env_int("OCR_SCALE"),

@@ -14,6 +14,11 @@ class OcrEngine:
         self.config = config
         self._ocr: Any | None = None
 
+        if self.config.fake_embeddings:
+            if self.config.ocr_enabled:
+                log.warning("skipping OCR because fake embeddings are enabled")
+            return
+
         if self.config.ocr_enabled:
             from yomitoku import OCR
 
@@ -22,7 +27,7 @@ class OcrEngine:
             log.info("yomitoku OCR loaded")
 
     def read_image_text(self, image_path: str) -> str:
-        if not self.config.ocr_enabled:
+        if self.config.fake_embeddings or not self.config.ocr_enabled:
             return ""
 
         from PIL import Image

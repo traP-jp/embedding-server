@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: ../server
-      dockerfile: ../development/Dockerfile
+      dockerfile: ../development/server.Dockerfile
     container_name: embedding-api-dev
     working_dir: /app/server
     ports:
@@ -30,6 +30,23 @@ services:
       interval: 1s
       timeout: 10s
       retries: 60
+
+  worker:
+    build:
+      context: ..
+      dockerfile: development/worker.fake.Dockerfile
+    container_name: embedding-worker-dev
+    env_file:
+      - ../.env
+    environment:
+      EMBEDDING_WORKER_FAKE: "true"
+      FAKE_EMBEDDING_DIM: "1024"
+      OCR_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - embedding-data:/data
 
 volumes:
   embedding-data:
