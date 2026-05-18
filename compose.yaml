@@ -35,6 +35,10 @@ services:
     container_name: embedding-worker
     environment:
       HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+      XDG_CACHE_HOME: /cache
+      HF_HOME: /cache/huggingface
+      HF_HUB_CACHE: /cache/huggingface/hub
+      TORCH_HOME: /cache/torch
     env_file:
       - .env
     depends_on:
@@ -55,7 +59,9 @@ services:
       - seccomp:unconfined
     volumes:
       - embedding-data:/data
+      - worker-cache:/cache
 
 volumes:
   embedding-data:
   postgres-data:
+  worker-cache:

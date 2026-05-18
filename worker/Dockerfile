@@ -5,6 +5,10 @@ FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.10.0
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
+	XDG_CACHE_HOME=/cache \
+	HF_HOME=/cache/huggingface \
+	HF_HUB_CACHE=/cache/huggingface/hub \
+	TORCH_HOME=/cache/torch \
 	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
