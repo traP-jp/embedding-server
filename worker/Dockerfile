@@ -6,19 +6,9 @@ WORKDIR /app
 
 ENV PIP_NO_CACHE_DIR=1 \
 	PYTHONUNBUFFERED=1 \
-	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-	ATTN_IMPLEMENTATION=sdpa \
-	OCR_DEVICE=cuda
+	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-COPY pyproject.toml \
-	embedding_engine.py \
-	job_runner.py \
-	main.py \
-	ocr_engine.py \
-	worker_api.py \
-	worker_config.py \
-	./
-COPY scripts ./scripts
+COPY . .
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1 \
@@ -36,6 +26,7 @@ if not torch.version.hip:
 print(f"base ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
 PY
 
+# pyprojectをinstall
 RUN python -m pip install --break-system-packages --no-cache-dir -e ".[runtime]" \
 	&& python - <<'PY'
 import torch
