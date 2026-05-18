@@ -28,7 +28,3 @@ run = "docker compose -f development/compose.yaml up --build"
 [tasks.dev-down]
 description = "開発環境のコンテナを削除する"
 run = "docker compose -f development/compose.yaml down"
-
-[tasks.update-qwen-embedding-script]
-description = "GitHub版 Qwen3-VL-Embedding wrapper を worker/scripts に取得"
-run = "curl -fsSL -o worker/scripts/qwen3_vl_embedding.py https://raw.githubusercontent.com/QwenLM/Qwen3-VL-Embedding/main/src/models/qwen3_vl_embedding.py"
