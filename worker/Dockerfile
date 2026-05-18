@@ -10,7 +10,15 @@ ENV PIP_NO_CACHE_DIR=1 \
 	ATTN_IMPLEMENTATION=sdpa \
 	OCR_DEVICE=cuda
 
-COPY pyproject.toml *.py ./
+COPY pyproject.toml \
+	embedding_engine.py \
+	job_runner.py \
+	main.py \
+	ocr_engine.py \
+	worker_api.py \
+	worker_config.py \
+	./
+COPY scripts ./scripts
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1 \
@@ -36,16 +44,6 @@ import torchvision
 if not torch.version.hip:
     raise SystemExit(f"expected ROCm torch, got torch={torch.__version__}")
 print(f"using ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
-PY
-
-RUN mkdir -p /app/scripts \
-	&& python - <<'PY'
-from pathlib import Path
-from urllib.request import urlopen
-
-url = "https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B/resolve/main/scripts/qwen3_vl_embedding.py"
-target = Path("/app/scripts/qwen3_vl_embedding.py")
-target.write_bytes(urlopen(url, timeout=60).read())
 PY
 
 CMD ["python", "main.py"]

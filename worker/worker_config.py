@@ -24,24 +24,14 @@ def env_float(name: str) -> float:
     return float(required_env(name))
 
 
-def optional_int(name: str) -> int | None:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return None
-    return int(raw)
-
-
 @dataclass(frozen=True)
 class Config:
     api_base_url: str
     poll_interval_seconds: float
-    model_name: str
-    model_script: str
     torch_dtype: str
     attn_implementation: str
-    batch_size: int
-    max_pixels: int | None
     fake_embeddings: bool
+    fake_embedding_dim: int
     ocr_enabled: bool
     ocr_device: str
     ocr_scale: int
@@ -59,13 +49,10 @@ class Config:
         return cls(
             api_base_url=api_base_url,
             poll_interval_seconds=env_float("POLL_INTERVAL_SECONDS"), # ジョブが無いときの待機秒数
-            model_name=required_env("MODEL_NAME"), #モデル名
-            model_script=required_env("QWEN_EMBEDDING_SCRIPT"), # モデルスクリプトのパス
             torch_dtype=required_env("TORCH_DTYPE").lower(),
             attn_implementation=required_env("ATTN_IMPLEMENTATION"),
-            batch_size=env_int("EMBED_BATCH_SIZE"),
-            max_pixels=optional_int("MODEL_MAX_PIXELS"),
-            fake_embeddings=env_bool("EMBEDDING_WORKER_FAKE"),
+            fake_embeddings=env_bool("EMBEDDING_WORKER_FAKE"), # 埋め込みを偽のものにするか
+            fake_embedding_dim=env_int("FAKE_EMBEDDING_DIM"),
             ocr_enabled=env_bool("OCR_ENABLED"),
             ocr_device=required_env("OCR_DEVICE"),
             ocr_scale=env_int("OCR_SCALE"),
