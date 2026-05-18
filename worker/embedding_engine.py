@@ -56,6 +56,21 @@ class EmbeddingEngine:
         )
         log.info("embedding model loaded")
 
+    def _resolve_torch_dtype(self, name: str) -> Any:
+        import torch
+
+        match name.strip().lower():
+            case "float16" | "fp16" | "half":
+                return torch.float16
+            case "bfloat16" | "bf16":
+                return torch.bfloat16
+            case "float32" | "fp32" | "float":
+                return torch.float32
+            case "auto":
+                return "auto"
+            case _:
+                raise ValueError(f"unsupported TORCH_DTYPE: {name}")
+
     def _embed_with_model(self, item: dict[str, Any]) -> list[float]:
         assert self.embedder is not None
         assert self.torch is not None
