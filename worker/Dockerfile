@@ -4,19 +4,18 @@ FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.10.0
 
 WORKDIR /app
 
-ENV PIP_NO_CACHE_DIR=1 \
-	PYTHONUNBUFFERED=1 \
+ENV PYTHONUNBUFFERED=1 \
 	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-COPY . .
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+	--mount=type=cache,target=/var/lib/apt,sharing=locked \
+	rm -f /etc/apt/apt.conf.d/docker-clean \
+	&& apt-get update \
+	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1
 
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1 \
-	&& rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml ./
 
-# The base image already contains the ROCm-enabled torch build. Install Python
-# application dependencies into that interpreter instead of creating an isolated
-# venv that would hide the ROCm torch package.
+# ベースイメージの torch が ROCm 対応版であることを確認する
 RUN python - <<'PY'
 import torch
 import torchvision
@@ -26,15 +25,38 @@ if not torch.version.hip:
 print(f"base ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
 PY
 
-# pyprojectをinstall
-RUN python -m pip install --break-system-packages --no-cache-dir -e ".[runtime]" \
-	&& python - <<'PY'
-import torch
-import torchvision
+# pyproject.toml から依存パッケージを読み取り、先に install する
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked python - <<'PY'
+import subprocess
+import sys
+import tomllib
 
-if not torch.version.hip:
-    raise SystemExit(f"expected ROCm torch, got torch={torch.__version__}")
-print(f"using ROCm torch={torch.__version__} torchvision={torchvision.__version__}")
+with open("pyproject.toml", "rb") as f:
+    project = tomllib.load(f)["project"]
+
+dependencies = [
+    *project.get("dependencies", []),
+    *project.get("optional-dependencies", {}).get("runtime", []),
+]
+
+subprocess.check_call([
+    sys.executable,
+    "-m",
+    "pip",
+    "install",
+    "--break-system-packages",
+    "--timeout",
+    "120",
+    "--retries",
+    "10",
+    *dependencies,
+])
 PY
+
+# ここでアプリケーションコードをコピーする
+COPY . .
+
+# 依存は前段で入れているため、ここでは worker 本体だけを editable install する
+RUN python -m pip install --break-system-packages --no-cache-dir --no-build-isolation --no-deps -e .
 
 CMD ["python", "main.py"]
