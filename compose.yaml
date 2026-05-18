@@ -33,6 +33,8 @@ services:
       context: ./worker
       dockerfile: Dockerfile
     container_name: embedding-worker
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
     env_file:
       - .env
     depends_on:
