@@ -19,13 +19,18 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 		return api.ClaimWorkerJob204Response{}, nil
 	}
 	if err != nil {
-		slog.Error("claim", slog.Any("error", err))
+		slog.Error("claim worker job", slog.Any("error", err))
 		return api.ClaimWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
 	var payload api.WorkerJobPayload
 	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
-		slog.Error("claim invalid payload", slog.String("job_id", id.String()), slog.Any("error", err))
+		slog.Error(
+			"claim worker job invalid payload",
+			slog.String("job_id", id.String()),
+			slog.Int("payload_bytes", len(payloadRaw)),
+			slog.Any("error", err),
+		)
 		return api.ClaimWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
@@ -39,29 +44,32 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 // ジョブペイロードがテキストのみの場合、サーバーはそれを内部にキャッシュする。
 func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorkerJobRequestObject) (api.CompleteWorkerJobResponseObject, error) {
 	if req.Body == nil || len(req.Body.Result.Vector) == 0 {
+		slog.Warn("worker job complete rejected", slog.String("job_id", req.Id.String()), slog.String("reason", "empty_vector"))
 		return api.CompleteWorkerJob400JSONResponse{Message: "result vector required"}, nil
 	}
 
 	rawPayload, err := h.repo.GetJobPayload(ctx, req.Id)
 	if errors.Is(err, repository.ErrJobNotFound) {
+		slog.Warn("worker job complete not found", slog.String("job_id", req.Id.String()))
 		return api.CompleteWorkerJob404JSONResponse{Message: "not found"}, nil
 	}
 	if err != nil {
-		slog.Error("complete load payload", slog.Any("error", err))
+		slog.Error("complete load payload", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
 	resultRaw, err := json.Marshal(req.Body.Result)
 	if err != nil {
-		slog.Error("complete marshal result", slog.Any("error", err))
+		slog.Error("complete marshal result", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
 	if err := h.repo.CompleteJob(ctx, req.Id, resultRaw); err != nil {
 		if errors.Is(err, repository.ErrJobNotFound) {
+			slog.Warn("worker job complete state not found", slog.String("job_id", req.Id.String()))
 			return api.CompleteWorkerJob404JSONResponse{Message: "not found"}, nil
 		}
-		slog.Error("complete", slog.Any("error", err))
+		slog.Error("complete worker job", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 	if h.notifier != nil {
@@ -70,14 +78,16 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 
 	var payload api.WorkerJobPayload
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
-		slog.Error("complete invalid payload", slog.Any("error", err))
+		slog.Error("complete invalid payload", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		return api.CompleteWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
 	// テキスト埋め込みジョブの結果はキャッシュする。
 	if payload.Text != nil && strings.TrimSpace(*payload.Text) != "" && (payload.ImagePaths == nil || len(*payload.ImagePaths) == 0) {
 		if err := h.repo.SetTextCache(ctx, *payload.Text, resultRaw); err != nil {
-			slog.Warn("complete cache set failed, continuing anyway", slog.Any("error", err))
+			slog.Warn("complete cache set failed, continuing anyway", slog.String("job_id", req.Id.String()), slog.Any("error", err))
+		} else {
+			slog.Debug("worker job result cached", slog.String("job_id", req.Id.String()), slog.Int("text_chars", len(*payload.Text)))
 		}
 	}
 
@@ -93,10 +103,11 @@ func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobReque
 
 	if err := h.repo.FailJob(ctx, req.Id); err != nil {
 		if errors.Is(err, repository.ErrJobNotFound) {
+			slog.Warn("worker job fail not found", slog.String("job_id", req.Id.String()))
 			return api.FailWorkerJob404JSONResponse{Message: "not found"}, nil
 		}
 
-		slog.Error("fail", slog.Any("error", err))
+		slog.Error("fail worker job", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		return api.FailWorkerJob500JSONResponse{Message: "internal error"}, nil
 	}
 
@@ -108,5 +119,6 @@ func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobReque
 		slog.Error("fail cleanup image dir", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 	}
 
+	slog.Info("worker job failed", slog.String("job_id", req.Id.String()))
 	return api.FailWorkerJob204Response{}, nil
 }

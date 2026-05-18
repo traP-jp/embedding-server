@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 import httpx
+
+log = logging.getLogger("worker")
 
 
 class ApiClient:
@@ -35,9 +39,36 @@ class ApiClient:
         if body is not None:
             request_kwargs["json"] = body
 
-        response = httpx.post(
-            self.base_url + path,
-            **request_kwargs,
-        )
+        started = time.perf_counter()
+        try:
+            response = httpx.post(
+                self.base_url + path,
+                **request_kwargs,
+            )
+        except httpx.RequestError as e:
+            log.error(
+                "api request failed method=POST path=%s elapsed_sec=%.3f error=%s",
+                path,
+                time.perf_counter() - started,
+                e,
+            )
+            raise
+
+        elapsed = time.perf_counter() - started
+        if response.is_error:
+            log.error(
+                "api request http error method=POST path=%s status=%s elapsed_sec=%.3f body=%s",
+                path,
+                response.status_code,
+                elapsed,
+                response.content[:500],
+            )
+        else:
+            log.debug(
+                "api request completed method=POST path=%s status=%s elapsed_sec=%.3f",
+                path,
+                response.status_code,
+                elapsed,
+            )
         response.raise_for_status()
         return response

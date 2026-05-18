@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import math
+import time
 from typing import Any
 
 from worker_config import Config
@@ -32,29 +33,46 @@ class EmbeddingEngine:
         return self._embed_with_model(item)
 
     def _load_model(self) -> None:
-        import torch
-        from scripts.qwen3_vl_embedding import Qwen3VLEmbedder
+        started = time.perf_counter()
+        try:
+            import torch
+            from scripts.qwen3_vl_embedding import Qwen3VLEmbedder
 
-        self.torch = torch
-        dtype = self._resolve_torch_dtype(self.config.torch_dtype)
+            self.torch = torch
+            dtype = self._resolve_torch_dtype(self.config.torch_dtype)
+            log.info(
+                "embedding model load started model=%s dtype=%s attn=%s cuda=%s cuda_devices=%s",
+                QWEN_MODEL_NAME,
+                dtype,
+                self.config.attn_implementation or "default",
+                torch.cuda.is_available(),
+                torch.cuda.device_count() if torch.cuda.is_available() else 0,
+            )
 
-        log.info(
-            "loading embedding model=%s dtype=%s attn=%s cuda=%s",
-            QWEN_MODEL_NAME,
-            dtype,
-            self.config.attn_implementation or "default",
-            torch.cuda.is_available(),
-        )
-        if torch.cuda.is_available():
-            log.info("gpu=%s", torch.cuda.get_device_name(0))
+            if torch.cuda.is_available():
+                current_device = torch.cuda.current_device()
+                props = torch.cuda.get_device_properties(current_device)
+                log.info(
+                    "embedding model load gpu=%s device_index=%s total_memory_mib=%s",
+                    torch.cuda.get_device_name(current_device),
+                    current_device,
+                    props.total_memory // (1024 * 1024),
+                )
 
-        self.embedder = Qwen3VLEmbedder(
-            model_name_or_path=QWEN_MODEL_NAME,
-            torch_dtype=dtype,
-            low_cpu_mem_usage=True,
-            attn_implementation=self.config.attn_implementation,
-        )
-        log.info("embedding model loaded")
+            log.info("embedding model init started")
+            self.embedder = Qwen3VLEmbedder(
+                model_name_or_path=QWEN_MODEL_NAME,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                attn_implementation=self.config.attn_implementation,
+            )
+            log.info("embedding model loaded elapsed_sec=%.3f", time.perf_counter() - started)
+        except Exception:
+            log.exception(
+                "embedding model load failed elapsed_sec=%.3f",
+                time.perf_counter() - started,
+            )
+            raise
 
     def _resolve_torch_dtype(self, name: str) -> Any:
         import torch
@@ -75,6 +93,12 @@ class EmbeddingEngine:
         assert self.embedder is not None
         assert self.torch is not None
 
+        started = time.perf_counter()
+        log.info(
+            "embedding inference started text_parts=%s image_count=%s",
+            _count_text_parts(item),
+            _count_images(item),
+        )
         with self.torch.no_grad():
             embeddings = self.embedder.process([item])
 
@@ -85,6 +109,11 @@ class EmbeddingEngine:
         gc.collect()
         if self.torch.cuda.is_available():
             self.torch.cuda.empty_cache()
+        log.info(
+            "embedding inference completed dim=%s elapsed_sec=%.3f",
+            len(vector[0]),
+            time.perf_counter() - started,
+        )
         return vector[0].tolist()
 
     def _fake_embedding(self, item: dict[str, Any]) -> list[float]:
@@ -103,3 +132,21 @@ def _normalize(vector: list[float]) -> list[float]:
     if norm == 0 or not math.isfinite(norm):
         raise ValueError("cannot normalize embedding vector")
     return [float(value / norm) for value in vector]
+
+
+def _count_text_parts(item: dict[str, Any]) -> int:
+    text = item.get("text")
+    if isinstance(text, list):
+        return len(text)
+    if isinstance(text, str) and text:
+        return 1
+    return 0
+
+
+def _count_images(item: dict[str, Any]) -> int:
+    image = item.get("image")
+    if isinstance(image, list):
+        return len(image)
+    if image:
+        return 1
+    return 0

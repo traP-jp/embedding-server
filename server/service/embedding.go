@@ -42,6 +42,7 @@ func NewEmbeddingService(repo repository.Repository, notifier JobNotifier, jobFi
 // routerから呼ばれる関数。embeddingジョブを作成し、完了するまで待機する。
 func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingInput) (api.EmbeddingResult, error) {
 	if input.Text == "" && len(input.Images) == 0 {
+		slog.Warn("embedding create rejected", slog.String("reason", "empty_input"))
 		return api.EmbeddingResult{}, ErrEmbeddingInputRequired
 	}
 
@@ -50,12 +51,15 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 		if err == nil {
 			var result api.EmbeddingResult
 			if err := json.Unmarshal(raw, &result); err == nil {
+				slog.Info("embedding cache hit", slog.Int("text_chars", len(input.Text)), slog.Int("vector_dim", len(result.Vector)))
 				return result, nil
 			}
-			slog.Error("cache parse text", slog.Any("error", err))
+			slog.Error("cache parse text", slog.Int("text_chars", len(input.Text)), slog.Any("error", err))
 		} else if !errors.Is(err, repository.ErrCacheNotFound) { // キャッシュがない以外のエラーはログに出す
-			slog.Error("cache get text", slog.Any("error", err))
+			slog.Error("cache get text", slog.Int("text_chars", len(input.Text)), slog.Any("error", err))
 			return api.EmbeddingResult{}, err
+		} else {
+			slog.Debug("embedding cache miss", slog.Int("text_chars", len(input.Text)))
 		}
 	}
 
@@ -65,6 +69,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 		return api.EmbeddingResult{}, err
 	}
 	if count >= maxPendingEmbeddingJobs {
+		slog.Warn("embedding create rejected", slog.String("reason", "jobs_full"), slog.Int("pending_jobs", count))
 		return api.EmbeddingResult{}, ErrEmbeddingJobsFull
 	}
 
@@ -77,7 +82,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 	if len(input.Images) > 0 {
 		imagePaths, err := s.jobFile.WriteJobImages(id, input.Images)
 		if err != nil {
-			slog.Error("write embedding job", slog.Any("error", err))
+			slog.Error("write embedding job images", slog.String("job_id", id.String()), slog.Int("image_count", len(input.Images)), slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		}
 		payloadBody.ImagePaths = &imagePaths
@@ -85,7 +90,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 
 	payload, err := json.Marshal(payloadBody)
 	if err != nil {
-		slog.Error("marshal embedding job", slog.Any("error", err))
+		slog.Error("marshal embedding job", slog.String("job_id", id.String()), slog.Any("error", err))
 		if err := s.jobFile.RemoveJobImageDir(id); err != nil {
 			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
@@ -93,7 +98,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 	}
 
 	if err := s.repo.CreateJob(ctx, id, payload); err != nil {
-		slog.Error("create embedding job", slog.Any("error", err))
+		slog.Error("create embedding job", slog.String("job_id", id.String()), slog.Int("payload_bytes", len(payload)), slog.Any("error", err))
 		if err := s.jobFile.RemoveJobImageDir(id); err != nil {
 			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
 		}
@@ -106,6 +111,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 // jobの終了を待つ。ジョブが完了していれば結果を返し、完了していなければ待機する。
 func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
 	if s.notifier == nil {
+		slog.Error("embedding wait failed", slog.String("job_id", id.String()), slog.Any("error", ErrNotifierRequired))
 		return api.EmbeddingResult{}, ErrNotifierRequired
 	}
 
@@ -117,15 +123,19 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 	defer unsubscribe()
 
 	if result, err := s.readEmbeddingResult(ctx, id); err == nil {
+		slog.Info("embedding wait completed immediately", slog.String("job_id", id.String()), slog.Int("vector_dim", len(result.Vector)))
 		return result, nil
 	} else if !errors.Is(err, errEmbeddingResultNotReady) {
+		slog.Error("embedding wait initial read failed", slog.String("job_id", id.String()), slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
 
 	select {
 	case <-ctx.Done():
+		slog.Warn("embedding wait context done", slog.String("job_id", id.String()), slog.Any("error", ctx.Err()))
 		return api.EmbeddingResult{}, ctx.Err()
 	case <-deadline.C:
+		slog.Warn("embedding wait timed out", slog.String("job_id", id.String()), slog.Duration("timeout", syncEmbeddingWaitTimeout))
 		return api.EmbeddingResult{}, ErrEmbeddingTimeout
 	case <-ch:
 		return s.readEmbeddingResult(ctx, id)
@@ -140,12 +150,13 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	}
 	if err != nil {
-		slog.Error("wait embedding result", slog.Any("error", err))
+		slog.Error("wait embedding result", slog.String("job_id", id.String()), slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
 
 	switch job.Status {
 	case repository.StatusFailed:
+		slog.Warn("embedding result failed", slog.String("job_id", id.String()))
 		return api.EmbeddingResult{}, repository.ErrJobFailed
 	case repository.StatusPending:
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
@@ -156,7 +167,7 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 
 	var result api.EmbeddingResult
 	if err := json.Unmarshal(job.Result, &result); err != nil {
-		slog.Error("parse embedding result", slog.Any("error", err))
+		slog.Error("parse embedding result", slog.String("job_id", id.String()), slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
 

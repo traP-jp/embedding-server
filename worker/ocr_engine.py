@@ -20,11 +20,19 @@ class OcrEngine:
             return
 
         if self.config.ocr_enabled:
-            from yomitoku import OCR
+            try:
+                from yomitoku import OCR
 
-            log.info("loading yomitoku OCR device=%s", self.config.ocr_device)
-            self._ocr = OCR(visualize=self.config.ocr_visualize, device=self.config.ocr_device)
-            log.info("yomitoku OCR loaded")
+                log.info(
+                    "loading yomitoku OCR device=%s visualize=%s",
+                    self.config.ocr_device,
+                    self.config.ocr_visualize,
+                )
+                self._ocr = OCR(visualize=self.config.ocr_visualize, device=self.config.ocr_device)
+                log.info("yomitoku OCR loaded")
+            except Exception:
+                log.exception("yomitoku OCR load failed device=%s", self.config.ocr_device)
+                raise
 
     def read_image_text(self, image_path: str) -> str:
         if self.config.fake_embeddings or not self.config.ocr_enabled:

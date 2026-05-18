@@ -36,11 +36,11 @@ def main() -> None:
         log.error("missing worker configuration: %s", e)
         raise SystemExit(1)
 
-    log.info("worker api=%s", config.api_base_url)
-
+    log.info("worker components init started")
     api = ApiClient(config.api_base_url)
     ocr = OcrEngine(config)
     embedder = EmbeddingEngine(config)
+    log.info("worker components init completed")
 
     while not _stop:
         try:
@@ -57,6 +57,7 @@ def main() -> None:
                 continue
 
             if job is None:
+                log.info("claim no job poll_interval_sec=%s", config.poll_interval_seconds)
                 time.sleep(config.poll_interval_seconds)
                 continue
 
