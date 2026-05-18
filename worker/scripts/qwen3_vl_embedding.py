@@ -1,9 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Derived from QwenLM/Qwen3-VL-Embedding:
+# https://github.com/QwenLM/Qwen3-VL-Embedding/blob/main/src/models/qwen3_vl_embedding.py
+# Local modifications: adapted for embedding-server worker packaging and logging.
+
 import os
 import torch
 import torch.nn.functional as F
 import unicodedata
 import numpy as np
 import logging
+import time
 
 from PIL import Image
 from urllib.parse import urlparse
@@ -170,7 +176,10 @@ class Qwen3VLEmbedder():
         default_instruction: str = "Represent the user's input.",
         **kwargs
     ):
+        started = time.perf_counter()
+        step = "select_device"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info("qwen embedder init step=%s status=done device=%s", step, device)
 
         self.max_length = max_length
         self.min_pixels = min_pixels
@@ -181,13 +190,32 @@ class Qwen3VLEmbedder():
 
         self.default_instruction = default_instruction
 
-        self.model = Qwen3VLForEmbedding.from_pretrained(
-            model_name_or_path, trust_remote_code=True, **kwargs
-        ).to(device)
-        self.processor = Qwen3VLProcessor.from_pretrained(
-            model_name_or_path, padding_side='right'
-        )
-        self.model.eval()
+        try:
+            step = "load_model_weights"
+            logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
+            self.model = Qwen3VLForEmbedding.from_pretrained(
+                model_name_or_path, trust_remote_code=True, **kwargs
+            )
+            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
+
+            step = "move_model_to_device"
+            logger.info("qwen embedder init step=%s status=start device=%s", step, device)
+            self.model = self.model.to(device)
+            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
+
+            step = "load_processor"
+            logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
+            self.processor = Qwen3VLProcessor.from_pretrained(
+                model_name_or_path, padding_side='right'
+            )
+            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
+
+            step = "eval"
+            self.model.eval()
+            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
+        except Exception:
+            logger.exception("qwen embedder init failed step=%s elapsed_sec=%.3f", step, time.perf_counter() - started)
+            raise
 
     @torch.no_grad()
     def forward(self, inputs: Dict[str, Any]) -> Dict[str, torch.Tensor]:
