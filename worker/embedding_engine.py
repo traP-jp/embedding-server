@@ -40,10 +40,12 @@ class EmbeddingEngine:
 
             self.torch = torch
             dtype = self._resolve_torch_dtype(self.config.torch_dtype)
+            quantization_config = self._build_quantization_config(torch)
             log.info(
-                "embedding model load started model=%s dtype=%s attn=%s cuda=%s cuda_devices=%s",
+                "embedding model load started model=%s dtype=%s quantization=%s attn=%s cuda=%s cuda_devices=%s",
                 QWEN_MODEL_NAME,
                 dtype,
+                self.config.quantization,
                 self.config.attn_implementation or "default",
                 torch.cuda.is_available(),
                 torch.cuda.device_count() if torch.cuda.is_available() else 0,
@@ -59,13 +61,18 @@ class EmbeddingEngine:
                     props.total_memory // (1024 * 1024),
                 )
 
+            model_kwargs: dict[str, Any] = {
+                "model_name_or_path": QWEN_MODEL_NAME,
+                "dtype": dtype,
+                "low_cpu_mem_usage": True,
+                "attn_implementation": self.config.attn_implementation,
+            }
+            if quantization_config is not None:
+                model_kwargs["quantization_config"] = quantization_config
+                model_kwargs["device_map"] = "auto"
+
             log.info("embedding model init started")
-            self.embedder = Qwen3VLEmbedder(
-                model_name_or_path=QWEN_MODEL_NAME,
-                dtype=dtype,
-                low_cpu_mem_usage=True,
-                attn_implementation=self.config.attn_implementation,
-            )
+            self.embedder = Qwen3VLEmbedder(**model_kwargs)
             log.info("embedding model loaded elapsed_sec=%.3f", time.perf_counter() - started)
         except Exception:
             log.exception(
@@ -88,6 +95,26 @@ class EmbeddingEngine:
                 return "auto"
             case _:
                 raise ValueError(f"unsupported TORCH_DTYPE: {name}")
+
+    def _build_quantization_config(self, torch: Any) -> Any | None:
+        match self.config.quantization:
+            case "" | "none" | "false" | "off":
+                return None
+            case "4bit" | "bnb-4bit":
+                from transformers import BitsAndBytesConfig
+
+                return BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type=self.config.bnb_4bit_quant_type,
+                    bnb_4bit_use_double_quant=self.config.bnb_4bit_use_double_quant,
+                    bnb_4bit_compute_dtype=self._resolve_torch_dtype(self.config.bnb_4bit_compute_dtype),
+                )
+            case "8bit" | "bnb-8bit":
+                from transformers import BitsAndBytesConfig
+
+                return BitsAndBytesConfig(load_in_8bit=True)
+            case _:
+                raise ValueError(f"unsupported QUANTIZATION: {self.config.quantization}")
 
     def _embed_with_model(self, item: dict[str, Any]) -> list[float]:
         assert self.embedder is not None

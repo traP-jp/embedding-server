@@ -43,6 +43,10 @@ class Config:
     api_base_url: str
     poll_interval_seconds: float
     torch_dtype: str
+    quantization: str
+    bnb_4bit_quant_type: str
+    bnb_4bit_use_double_quant: bool
+    bnb_4bit_compute_dtype: str
     attn_implementation: str
     fake_embeddings: bool
     fake_embedding_dim: int
@@ -64,6 +68,10 @@ class Config:
             api_base_url=api_base_url,
             poll_interval_seconds=env_float("POLL_INTERVAL_SECONDS"), # ジョブが無いときの待機秒数
             torch_dtype=required_env("TORCH_DTYPE").lower(),
+            quantization=os.environ.get("QUANTIZATION", "none").strip().lower(),
+            bnb_4bit_quant_type=os.environ.get("BNB_4BIT_QUANT_TYPE", "nf4").strip().lower(),
+            bnb_4bit_use_double_quant=optional_env_bool("BNB_4BIT_USE_DOUBLE_QUANT", True),
+            bnb_4bit_compute_dtype=os.environ.get("BNB_4BIT_COMPUTE_DTYPE", "bfloat16").strip().lower(),
             attn_implementation=required_env("ATTN_IMPLEMENTATION"),
             fake_embeddings=optional_env_bool("EMBEDDING_WORKER_FAKE", False), # 埋め込みを偽のものにするか
             fake_embedding_dim=optional_env_int("FAKE_EMBEDDING_DIM", 1024),

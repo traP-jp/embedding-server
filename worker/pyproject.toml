@@ -10,6 +10,7 @@ dependencies = [
 [project.optional-dependencies]
 runtime = [
     "accelerate>=1.0.0",
+    "bitsandbytes>=0.46.1",
     "numpy>=1.26.0",
     "pillow>=10.0.0",
     "qwen-vl-utils>=0.0.14",
