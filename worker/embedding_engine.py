@@ -62,7 +62,7 @@ class EmbeddingEngine:
             log.info("embedding model init started")
             self.embedder = Qwen3VLEmbedder(
                 model_name_or_path=QWEN_MODEL_NAME,
-                torch_dtype=dtype,
+                dtype=dtype,
                 low_cpu_mem_usage=True,
                 attn_implementation=self.config.attn_implementation,
             )
