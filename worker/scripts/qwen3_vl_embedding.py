@@ -10,6 +10,7 @@ import unicodedata
 import numpy as np
 import logging
 import time
+import threading
 
 from PIL import Image
 from urllib.parse import urlparse
@@ -25,6 +26,22 @@ from transformers.utils.generic import check_model_inputs
 from qwen_vl_utils.vision_process import process_vision_info
 
 logger = logging.getLogger(__name__)
+
+
+def _start_step_heartbeat(step: str, started: float, interval_seconds: float = 30.0):
+    stop = threading.Event()
+
+    def run() -> None:
+        while not stop.wait(interval_seconds):
+            logger.info(
+                "qwen embedder init step=%s status=running elapsed_sec=%.3f",
+                step,
+                time.perf_counter() - started,
+            )
+
+    thread = threading.Thread(target=run, name=f"qwen-init-{step}-heartbeat", daemon=True)
+    thread.start()
+    return stop.set
 
 # Constants for configuration
 MAX_LENGTH = 8192
@@ -190,24 +207,43 @@ class Qwen3VLEmbedder():
 
         self.default_instruction = default_instruction
 
+        quantized = kwargs.get("quantization_config") is not None
+
         try:
             step = "load_model_weights"
             logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
-            self.model = Qwen3VLForEmbedding.from_pretrained(
-                model_name_or_path, trust_remote_code=True, **kwargs
-            )
+            stop_heartbeat = _start_step_heartbeat(step, started)
+            try:
+                self.model = Qwen3VLForEmbedding.from_pretrained(
+                    model_name_or_path, trust_remote_code=True, **kwargs
+                )
+            finally:
+                stop_heartbeat()
             logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
 
-            step = "move_model_to_device"
-            logger.info("qwen embedder init step=%s status=start device=%s", step, device)
-            self.model = self.model.to(device)
-            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
+            if quantized:
+                logger.info(
+                    "qwen embedder init step=move_model_to_device status=skipped reason=quantized_model"
+                )
+            else:
+                step = "move_model_to_device"
+                logger.info("qwen embedder init step=%s status=start device=%s", step, device)
+                stop_heartbeat = _start_step_heartbeat(step, started)
+                try:
+                    self.model = self.model.to(device)
+                finally:
+                    stop_heartbeat()
+                logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
 
             step = "load_processor"
             logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
-            self.processor = Qwen3VLProcessor.from_pretrained(
-                model_name_or_path, padding_side='right'
-            )
+            stop_heartbeat = _start_step_heartbeat(step, started)
+            try:
+                self.processor = Qwen3VLProcessor.from_pretrained(
+                    model_name_or_path, padding_side='right'
+                )
+            finally:
+                stop_heartbeat()
             logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
 
             step = "eval"
