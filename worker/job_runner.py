@@ -76,11 +76,12 @@ def build_embedding_item(payload: dict[str, Any], ocr: OcrEngine, job_id: str = 
         ocr_started = time.perf_counter()
         ocr_text = ocr.read_image_text(image_path)
         log.info(
-            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f",
+            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f preview=%r",
             job_id,
             idx,
             len(ocr_text),
             time.perf_counter() - ocr_started,
+            _preview(ocr_text),
         )
         if ocr_text:
             label = "[OCR]" if len(image_paths) == 1 else f"[OCR image {idx}]"
@@ -125,3 +126,10 @@ def _count_images(item: dict[str, Any]) -> int:
     if image:
         return 1
     return 0
+
+# 一時的に
+def _preview(text: str, limit: int = 120) -> str:
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
