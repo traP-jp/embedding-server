@@ -63,7 +63,7 @@ PY
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 	if [ "$BNB_BUILD_FROM_SOURCE" = "1" ]; then \
 		python -m pip uninstall --break-system-packages -y bitsandbytes; \
-		python -m pip install --break-system-packages --no-cache-dir "cmake>=3.31.6"; \
+		python -m pip install --break-system-packages --no-cache-dir "cmake>=3.31.6" "scikit-build-core>=0.11"; \
 		rm -rf /opt/bitsandbytes-src; \
 		git clone --depth 1 https://github.com/bitsandbytes-foundation/bitsandbytes.git /opt/bitsandbytes-src; \
 		cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" -S /opt/bitsandbytes-src -B /opt/bitsandbytes-src/build; \
