@@ -151,13 +151,17 @@ class EmbeddingEngine:
         with self.torch.no_grad():
             embeddings = self.embedder.process([item])
 
+        step_started = time.perf_counter()
         vector = embeddings.detach().to("cpu").float()
+        log.info("embedding inference step=copy_to_cpu elapsed_sec=%.3f", time.perf_counter() - step_started)
         if len(vector) != 1: # バッチサイズは1だから1のはず
             raise ValueError(f"embedding job must produce exactly one vector, got {len(vector)}")
 
+        step_started = time.perf_counter()
         gc.collect()
         if self.torch.cuda.is_available():
             self.torch.cuda.empty_cache()
+        log.info("embedding inference step=cleanup elapsed_sec=%.3f", time.perf_counter() - step_started)
         log.info(
             "embedding inference completed dim=%s elapsed_sec=%.3f",
             len(vector[0]),

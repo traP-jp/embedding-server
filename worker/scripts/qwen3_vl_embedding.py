@@ -435,6 +435,7 @@ class Qwen3VLEmbedder():
 
     # Process inputs to generate normalized embeddings
     def process(self, inputs: List[Dict[str, Any]], normalize: bool = True) -> tuple:
+        started = time.perf_counter()
         conversations = [self.format_model_input(
             text=ele.get('text'),
             image=ele.get('image'),
@@ -443,15 +444,37 @@ class Qwen3VLEmbedder():
             fps=ele.get('fps'),
             max_frames=ele.get('max_frames')
         ) for ele in inputs]
+        logger.info("qwen embedder process step=format_inputs elapsed_sec=%.3f", time.perf_counter() - started)
 
+        step_started = time.perf_counter()
         processed_inputs = self._preprocess_inputs(conversations)
-        processed_inputs = {k: v.to(self.model.device) for k, v in processed_inputs.items()}
+        logger.info(
+            "qwen embedder process step=preprocess elapsed_sec=%.3f shapes=%s",
+            time.perf_counter() - step_started,
+            {
+                key: tuple(value.shape)
+                for key, value in processed_inputs.items()
+                if hasattr(value, "shape")
+            },
+        )
 
+        step_started = time.perf_counter()
+        processed_inputs = {k: v.to(self.model.device) for k, v in processed_inputs.items()}
+        logger.info("qwen embedder process step=to_device elapsed_sec=%.3f device=%s", time.perf_counter() - step_started, self.model.device)
+
+        step_started = time.perf_counter()
         outputs = self.forward(processed_inputs)
+        logger.info("qwen embedder process step=forward elapsed_sec=%.3f", time.perf_counter() - step_started)
+
+        step_started = time.perf_counter()
         embeddings = self._pooling_last(outputs['last_hidden_state'], outputs['attention_mask'])
+        logger.info("qwen embedder process step=pool elapsed_sec=%.3f", time.perf_counter() - step_started)
 
         # Normalize the embeddings if specified
         if normalize:
+            step_started = time.perf_counter()
             embeddings = F.normalize(embeddings, p=2, dim=-1)
+            logger.info("qwen embedder process step=normalize elapsed_sec=%.3f", time.perf_counter() - step_started)
 
+        logger.info("qwen embedder process step=total elapsed_sec=%.3f", time.perf_counter() - started)
         return embeddings
