@@ -34,6 +34,7 @@ services:
       dockerfile: Dockerfile
       args:
         BNB_BUILD_FROM_SOURCE: "${BNB_BUILD_FROM_SOURCE:-0}"
+        BNB_GIT_REF: "${BNB_GIT_REF:-0.49.2}"
         BNB_ROCM_ARCH: "${BNB_ROCM_ARCH:-gfx1030}"
     container_name: embedding-worker
     environment:

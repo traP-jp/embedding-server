@@ -3,6 +3,7 @@
 FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.10.0
 
 ARG BNB_BUILD_FROM_SOURCE=0
+ARG BNB_GIT_REF=0.49.2
 ARG BNB_ROCM_ARCH=gfx1030
 
 WORKDIR /app
@@ -65,7 +66,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 		python -m pip uninstall --break-system-packages -y bitsandbytes; \
 		python -m pip install --break-system-packages --no-cache-dir "cmake>=3.31.6" "scikit-build-core>=0.11"; \
 		rm -rf /opt/bitsandbytes-src; \
-		git clone --depth 1 https://github.com/bitsandbytes-foundation/bitsandbytes.git /opt/bitsandbytes-src; \
+		git clone --depth 1 --branch "$BNB_GIT_REF" https://github.com/bitsandbytes-foundation/bitsandbytes.git /opt/bitsandbytes-src; \
 		cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" -S /opt/bitsandbytes-src -B /opt/bitsandbytes-src/build; \
 		cmake --build /opt/bitsandbytes-src/build -j"$(nproc)"; \
 		python -m pip install --break-system-packages --no-build-isolation --no-deps -e /opt/bitsandbytes-src; \
