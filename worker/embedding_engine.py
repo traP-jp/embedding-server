@@ -63,7 +63,7 @@ class EmbeddingEngine:
 
             model_kwargs: dict[str, Any] = {
                 "model_name_or_path": QWEN_MODEL_NAME,
-                "torch_dtype": dtype,
+                "dtype": dtype,
                 "low_cpu_mem_usage": True,
                 "attn_implementation": self.config.attn_implementation,
                 "max_pixels": self.config.embedding_max_pixels,

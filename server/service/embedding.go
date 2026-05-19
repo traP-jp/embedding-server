@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const syncEmbeddingWaitTimeout = 100 * time.Second
+const syncEmbeddingWaitTimeout = 500 * time.Second
 
 // workerが30s timeoutで処理するため、30件以上pendingがあれば受付を止める。
 const maxPendingEmbeddingJobs = 30
