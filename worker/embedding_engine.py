@@ -66,6 +66,7 @@ class EmbeddingEngine:
                 "torch_dtype": dtype,
                 "low_cpu_mem_usage": True,
                 "attn_implementation": self.config.attn_implementation,
+                "max_pixels": self.config.embedding_max_pixels,
             }
             if quantization_config is not None:
                 model_kwargs["quantization_config"] = quantization_config

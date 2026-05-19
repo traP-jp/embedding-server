@@ -45,6 +45,7 @@ class Config:
     model_device_map: str
     model_max_memory_cuda: str
     model_max_memory_cpu: str
+    embedding_max_pixels: int
     torch_dtype: str
     quantization: str
     bnb_4bit_quant_type: str
@@ -73,6 +74,7 @@ class Config:
             model_device_map=os.environ.get("MODEL_DEVICE_MAP", "auto").strip().lower(),
             model_max_memory_cuda=os.environ.get("MODEL_MAX_MEMORY_CUDA", "").strip(),
             model_max_memory_cpu=os.environ.get("MODEL_MAX_MEMORY_CPU", "").strip(),
+            embedding_max_pixels=optional_env_int("EMBEDDING_MAX_PIXELS", 256 * 256),
             torch_dtype=required_env("TORCH_DTYPE").lower(),
             quantization=os.environ.get("QUANTIZATION", "none").strip().lower(),
             bnb_4bit_quant_type=os.environ.get("BNB_4BIT_QUANT_TYPE", "nf4").strip().lower(),
