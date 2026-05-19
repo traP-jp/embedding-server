@@ -63,13 +63,16 @@ class EmbeddingEngine:
 
             model_kwargs: dict[str, Any] = {
                 "model_name_or_path": QWEN_MODEL_NAME,
-                "dtype": dtype,
+                "torch_dtype": dtype,
                 "low_cpu_mem_usage": True,
                 "attn_implementation": self.config.attn_implementation,
             }
             if quantization_config is not None:
                 model_kwargs["quantization_config"] = quantization_config
-                model_kwargs["device_map"] = "auto"
+                model_kwargs["device_map"] = self._resolve_device_map(self.config.model_device_map)
+                max_memory = self._resolve_max_memory()
+                if max_memory:
+                    model_kwargs["max_memory"] = max_memory
 
             log.info("embedding model init started")
             self.embedder = Qwen3VLEmbedder(**model_kwargs)
@@ -95,6 +98,25 @@ class EmbeddingEngine:
                 return "auto"
             case _:
                 raise ValueError(f"unsupported TORCH_DTYPE: {name}")
+
+    def _resolve_device_map(self, name: str) -> Any:
+        match name.strip().lower():
+            case "" | "auto":
+                return "auto"
+            case "cuda" | "cuda:0" | "gpu" | "single-gpu":
+                return {"": 0}
+            case "cpu":
+                return {"": "cpu"}
+            case _:
+                raise ValueError(f"unsupported MODEL_DEVICE_MAP: {name}")
+
+    def _resolve_max_memory(self) -> dict[Any, str] | None:
+        max_memory: dict[Any, str] = {}
+        if self.config.model_max_memory_cuda:
+            max_memory[0] = self.config.model_max_memory_cuda
+        if self.config.model_max_memory_cpu:
+            max_memory["cpu"] = self.config.model_max_memory_cpu
+        return max_memory or None
 
     def _build_quantization_config(self, torch: Any) -> Any | None:
         match self.config.quantization:

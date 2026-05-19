@@ -42,6 +42,9 @@ def env_float(name: str) -> float:
 class Config:
     api_base_url: str
     poll_interval_seconds: float
+    model_device_map: str
+    model_max_memory_cuda: str
+    model_max_memory_cpu: str
     torch_dtype: str
     quantization: str
     bnb_4bit_quant_type: str
@@ -67,6 +70,9 @@ class Config:
         return cls(
             api_base_url=api_base_url,
             poll_interval_seconds=env_float("POLL_INTERVAL_SECONDS"), # ジョブが無いときの待機秒数
+            model_device_map=os.environ.get("MODEL_DEVICE_MAP", "auto").strip().lower(),
+            model_max_memory_cuda=os.environ.get("MODEL_MAX_MEMORY_CUDA", "").strip(),
+            model_max_memory_cpu=os.environ.get("MODEL_MAX_MEMORY_CPU", "").strip(),
             torch_dtype=required_env("TORCH_DTYPE").lower(),
             quantization=os.environ.get("QUANTIZATION", "none").strip().lower(),
             bnb_4bit_quant_type=os.environ.get("BNB_4BIT_QUANT_TYPE", "nf4").strip().lower(),

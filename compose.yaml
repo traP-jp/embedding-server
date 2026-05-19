@@ -32,9 +32,12 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
+      args:
+        BNB_BUILD_FROM_SOURCE: "${BNB_BUILD_FROM_SOURCE:-0}"
+        BNB_ROCM_ARCH: "${BNB_ROCM_ARCH:-gfx1030}"
     container_name: embedding-worker
     environment:
-      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+      HSA_OVERRIDE_GFX_VERSION: "${HSA_OVERRIDE_GFX_VERSION:-10.3.0}"
       XDG_CACHE_HOME: /cache
       HF_HOME: /cache/huggingface
       HF_HUB_CACHE: /cache/huggingface/hub

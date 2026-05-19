@@ -2,6 +2,9 @@
 # Python 3.12 / PyTorch 2.10 / ROCm 7.2（Hub: rocm/pytorch、タグは再現性のため固定。更新時は Docker Hub の tags を確認）
 FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.10.0
 
+ARG BNB_BUILD_FROM_SOURCE=0
+ARG BNB_ROCM_ARCH=gfx1030
+
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
@@ -15,7 +18,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	--mount=type=cache,target=/var/lib/apt,sharing=locked \
 	rm -f /etc/apt/apt.conf.d/docker-clean \
 	&& apt-get update \
-	&& apt-get install -y --no-install-recommends libglib2.0-0 libgl1
+	&& apt-get install -y --no-install-recommends build-essential git libglib2.0-0 libgl1
 
 COPY pyproject.toml ./
 
@@ -56,6 +59,17 @@ subprocess.check_call([
     *dependencies,
 ])
 PY
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+	if [ "$BNB_BUILD_FROM_SOURCE" = "1" ]; then \
+		python -m pip uninstall --break-system-packages -y bitsandbytes; \
+		python -m pip install --break-system-packages --no-cache-dir "cmake>=3.31.6"; \
+		git clone --depth 1 https://github.com/bitsandbytes-foundation/bitsandbytes.git /tmp/bitsandbytes; \
+		cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" -S /tmp/bitsandbytes -B /tmp/bitsandbytes/build; \
+		cmake --build /tmp/bitsandbytes/build -j"$(nproc)"; \
+		python -m pip install --break-system-packages --no-build-isolation --no-deps /tmp/bitsandbytes; \
+		rm -rf /tmp/bitsandbytes; \
+	fi
 
 # ここでアプリケーションコードをコピーする
 COPY . .
