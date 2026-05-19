@@ -64,11 +64,12 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 	if [ "$BNB_BUILD_FROM_SOURCE" = "1" ]; then \
 		python -m pip uninstall --break-system-packages -y bitsandbytes; \
 		python -m pip install --break-system-packages --no-cache-dir "cmake>=3.31.6"; \
-		git clone --depth 1 https://github.com/bitsandbytes-foundation/bitsandbytes.git /tmp/bitsandbytes; \
-		cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" -S /tmp/bitsandbytes -B /tmp/bitsandbytes/build; \
-		cmake --build /tmp/bitsandbytes/build -j"$(nproc)"; \
-		python -m pip install --break-system-packages --no-build-isolation --no-deps /tmp/bitsandbytes; \
-		rm -rf /tmp/bitsandbytes; \
+		rm -rf /opt/bitsandbytes-src; \
+		git clone --depth 1 https://github.com/bitsandbytes-foundation/bitsandbytes.git /opt/bitsandbytes-src; \
+		cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" -S /opt/bitsandbytes-src -B /opt/bitsandbytes-src/build; \
+		cmake --build /opt/bitsandbytes-src/build -j"$(nproc)"; \
+		python -m pip install --break-system-packages --no-build-isolation --no-deps -e /opt/bitsandbytes-src; \
+		python -c 'import importlib.metadata; import bitsandbytes as bnb; print("source bitsandbytes", importlib.metadata.version("bitsandbytes"), bnb.__file__)'; \
 	fi
 
 # ここでアプリケーションコードをコピーする
