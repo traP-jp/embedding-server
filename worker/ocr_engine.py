@@ -53,6 +53,12 @@ class OcrEngine:
                 )
             arr = np.array(img)
 
+        # GPUメモリ不足対策: OCR推論前にキャッシュをクリア
+        if self.config.ocr_device.startswith("cuda"):
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         results, _ = self._ocr(arr)
         lines: list[str] = []
         for word_prediction in results.words:
