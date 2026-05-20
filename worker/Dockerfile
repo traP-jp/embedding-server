@@ -61,6 +61,10 @@ subprocess.check_call([
 ])
 PY
 
+# Flash Attention 2 のインストール（ROCm 対応版）
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+	python -m pip install --break-system-packages --no-cache-dir --no-build-isolation "flash-attn>=2.6.0"
+
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 	if [ "$BNB_BUILD_FROM_SOURCE" = "1" ]; then \
 		python -m pip uninstall --break-system-packages -y bitsandbytes; \
