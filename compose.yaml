@@ -38,11 +38,13 @@ services:
         BNB_ROCM_ARCH: "${BNB_ROCM_ARCH:-gfx1030}"
     container_name: embedding-worker
     environment:
-      # キャッシュディレクトリの設定（コンテナ固有）
+      HSA_OVERRIDE_GFX_VERSION: "${HSA_OVERRIDE_GFX_VERSION:-10.3.0}"
       XDG_CACHE_HOME: /cache
       HF_HOME: /cache/huggingface
       HF_HUB_CACHE: /cache/huggingface/hub
       TORCH_HOME: /cache/torch
+      HF_HUB_DISABLE_XET: "1"
+      HF_XET_DISABLE: "1"
     env_file:
       - .env
     depends_on:
