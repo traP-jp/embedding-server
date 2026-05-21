@@ -35,54 +35,67 @@ class OcrEngine:
                 raise
 
     def read_image_text(self, image_path: str) -> str:
-        if self.config.fake_embeddings or not self.config.ocr_enabled:
+        if self.config.fake_embeddings or not self.config.ocr_enabled or self._ocr is None:
             return ""
 
-        from PIL import Image
-        import numpy as np
+        torch: Any | None = None
+        try:
+            from PIL import Image
+            import numpy as np
 
-        assert self._ocr is not None
+            with Image.open(image_path) as img:
+                img = img.convert("RGB")
+                if self.config.ocr_scale > 1:
+                    width, height = img.size
+                    img = img.resize(
+                        (width * self.config.ocr_scale, height * self.config.ocr_scale),
+                        Image.Resampling.BICUBIC,
+                    )
+                arr = np.array(img)
 
-        with Image.open(image_path) as img:
-            img = img.convert("RGB")
-            if self.config.ocr_scale > 1:
-                width, height = img.size
-                img = img.resize(
-                    (width * self.config.ocr_scale, height * self.config.ocr_scale),
-                    Image.Resampling.BICUBIC,
-                )
-            arr = np.array(img)
+            # GPUメモリ不足対策: OCR推論前にキャッシュをクリア
+            if self.config.ocr_device.startswith("cuda"):
+                import torch
 
-        # GPUメモリ不足対策: OCR推論前にキャッシュをクリア
-        if self.config.ocr_device.startswith("cuda"):
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-        results, _ = self._ocr(arr)
-        lines: list[str] = []
-        for word_prediction in results.words:
-            if (
-                word_prediction.rec_score < self.config.ocr_rec_threshold
-                or word_prediction.det_score < self.config.ocr_det_threshold
-            ):
-                continue
+            results, _ = self._ocr(arr)
+            lines: list[str] = []
+            for word_prediction in results.words:
+                if (
+                    word_prediction.rec_score < self.config.ocr_rec_threshold
+                    or word_prediction.det_score < self.config.ocr_det_threshold
+                ):
+                    continue
 
-            text = str(word_prediction.content).strip()
-            if not text:
-                continue
-            # 連続したスペースを半角スペースにまとめる
-            lines.append(re.sub(r"\s+", " ", text))
+                text = str(word_prediction.content).strip()
+                if not text:
+                    continue
+                # 連続したスペースを半角スペースにまとめる
+                lines.append(re.sub(r"\s+", " ", text))
 
-        uniq: list[str] = []
-        seen: set[str] = set()
-        for line in lines:
-            if line in seen:
-                continue
-            seen.add(line)
-            uniq.append(line)
+            uniq: list[str] = []
+            seen: set[str] = set()
+            for line in lines:
+                if line in seen:
+                    continue
+                seen.add(line)
+                uniq.append(line)
 
-        ocr_text = "\n".join(uniq).strip()
-        if len(ocr_text) > self.config.ocr_max_chars:
-            ocr_text = ocr_text[: self.config.ocr_max_chars]
-        return ocr_text
+            ocr_text = "\n".join(uniq).strip()
+            if len(ocr_text) > self.config.ocr_max_chars:
+                ocr_text = ocr_text[: self.config.ocr_max_chars]
+            return ocr_text
+        except Exception:
+            log.exception("OCR failed image_path=%s; continuing without OCR text", image_path)
+            return ""
+        finally:
+            if self.config.ocr_device.startswith("cuda"):
+                try:
+                    if torch is None:
+                        import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    log.exception("failed to empty torch cache")
