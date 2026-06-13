@@ -57,7 +57,6 @@ def main() -> None:
                 continue
 
             if job is None:
-                log.info("claim no job poll_interval_sec=%s", config.poll_interval_seconds)
                 time.sleep(config.poll_interval_seconds)
                 continue
 
