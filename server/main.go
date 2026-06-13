@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/labstack/echo/v5"
@@ -56,6 +57,11 @@ func main() {
 		LogRequestID: true,
 		HandleError:  true,
 		LogValuesFunc: func(c *echo.Context, v mid.RequestLoggerValues) error {
+			// ワーカーのポーリングはジョブがない場合に204を返すため、正常系のログ出力を抑制する。
+			if v.Error == nil && v.Method == http.MethodPost && v.URI == "/internal/worker/jobs/claim" && v.Status == http.StatusNoContent {
+				return nil
+			}
+
 			attrs := []any{
 				slog.String("method", v.Method),
 				slog.String("uri", v.URI),
