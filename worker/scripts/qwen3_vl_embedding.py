@@ -1,16 +1,9 @@
-# SPDX-License-Identifier: Apache-2.0
-# Derived from QwenLM/Qwen3-VL-Embedding:
-# https://github.com/QwenLM/Qwen3-VL-Embedding/blob/main/src/models/qwen3_vl_embedding.py
-# Local modifications: adapted for embedding-server worker packaging and logging.
-
 import os
 import torch
 import torch.nn.functional as F
 import unicodedata
 import numpy as np
 import logging
-import time
-import threading
 
 from PIL import Image
 from urllib.parse import urlparse
@@ -26,22 +19,6 @@ from transformers.utils.generic import check_model_inputs
 from qwen_vl_utils.vision_process import process_vision_info
 
 logger = logging.getLogger(__name__)
-
-
-def _start_step_heartbeat(step: str, started: float, interval_seconds: float = 30.0):
-    stop = threading.Event()
-
-    def run() -> None:
-        while not stop.wait(interval_seconds):
-            logger.info(
-                "qwen embedder init step=%s status=running elapsed_sec=%.3f",
-                step,
-                time.perf_counter() - started,
-            )
-
-    thread = threading.Thread(target=run, name=f"qwen-init-{step}-heartbeat", daemon=True)
-    thread.start()
-    return stop.set
 
 # Constants for configuration
 MAX_LENGTH = 8192
@@ -193,10 +170,7 @@ class Qwen3VLEmbedder():
         default_instruction: str = "Represent the user's input.",
         **kwargs
     ):
-        started = time.perf_counter()
-        step = "select_device"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info("qwen embedder init step=%s status=done device=%s", step, device)
 
         self.max_length = max_length
         self.min_pixels = min_pixels
@@ -207,51 +181,13 @@ class Qwen3VLEmbedder():
 
         self.default_instruction = default_instruction
 
-        quantized = kwargs.get("quantization_config") is not None
-
-        try:
-            step = "load_model_weights"
-            logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
-            stop_heartbeat = _start_step_heartbeat(step, started)
-            try:
-                self.model = Qwen3VLForEmbedding.from_pretrained(
-                    model_name_or_path, trust_remote_code=True, **kwargs
-                )
-            finally:
-                stop_heartbeat()
-            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
-
-            if quantized:
-                logger.info(
-                    "qwen embedder init step=move_model_to_device status=skipped reason=quantized_model"
-                )
-            else:
-                step = "move_model_to_device"
-                logger.info("qwen embedder init step=%s status=start device=%s", step, device)
-                stop_heartbeat = _start_step_heartbeat(step, started)
-                try:
-                    self.model = self.model.to(device)
-                finally:
-                    stop_heartbeat()
-                logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
-
-            step = "load_processor"
-            logger.info("qwen embedder init step=%s status=start model=%s", step, model_name_or_path)
-            stop_heartbeat = _start_step_heartbeat(step, started)
-            try:
-                self.processor = Qwen3VLProcessor.from_pretrained(
-                    model_name_or_path, padding_side='right'
-                )
-            finally:
-                stop_heartbeat()
-            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
-
-            step = "eval"
-            self.model.eval()
-            logger.info("qwen embedder init step=%s status=done elapsed_sec=%.3f", step, time.perf_counter() - started)
-        except Exception:
-            logger.exception("qwen embedder init failed step=%s elapsed_sec=%.3f", step, time.perf_counter() - started)
-            raise
+        self.model = Qwen3VLForEmbedding.from_pretrained(
+            model_name_or_path, trust_remote_code=True, **kwargs
+        ).to(device)
+        self.processor = Qwen3VLProcessor.from_pretrained(
+            model_name_or_path, padding_side='right'
+        )
+        self.model.eval()
 
     @torch.no_grad()
     def forward(self, inputs: Dict[str, Any]) -> Dict[str, torch.Tensor]:
@@ -435,7 +371,6 @@ class Qwen3VLEmbedder():
 
     # Process inputs to generate normalized embeddings
     def process(self, inputs: List[Dict[str, Any]], normalize: bool = True) -> tuple:
-        started = time.perf_counter()
         conversations = [self.format_model_input(
             text=ele.get('text'),
             image=ele.get('image'),
@@ -444,37 +379,15 @@ class Qwen3VLEmbedder():
             fps=ele.get('fps'),
             max_frames=ele.get('max_frames')
         ) for ele in inputs]
-        logger.info("qwen embedder process step=format_inputs elapsed_sec=%.3f", time.perf_counter() - started)
 
-        step_started = time.perf_counter()
         processed_inputs = self._preprocess_inputs(conversations)
-        logger.info(
-            "qwen embedder process step=preprocess elapsed_sec=%.3f shapes=%s",
-            time.perf_counter() - step_started,
-            {
-                key: tuple(value.shape)
-                for key, value in processed_inputs.items()
-                if hasattr(value, "shape")
-            },
-        )
-
-        step_started = time.perf_counter()
         processed_inputs = {k: v.to(self.model.device) for k, v in processed_inputs.items()}
-        logger.info("qwen embedder process step=to_device elapsed_sec=%.3f device=%s", time.perf_counter() - step_started, self.model.device)
 
-        step_started = time.perf_counter()
         outputs = self.forward(processed_inputs)
-        logger.info("qwen embedder process step=forward elapsed_sec=%.3f", time.perf_counter() - step_started)
-
-        step_started = time.perf_counter()
         embeddings = self._pooling_last(outputs['last_hidden_state'], outputs['attention_mask'])
-        logger.info("qwen embedder process step=pool elapsed_sec=%.3f", time.perf_counter() - step_started)
 
         # Normalize the embeddings if specified
         if normalize:
-            step_started = time.perf_counter()
             embeddings = F.normalize(embeddings, p=2, dim=-1)
-            logger.info("qwen embedder process step=normalize elapsed_sec=%.3f", time.perf_counter() - step_started)
 
-        logger.info("qwen embedder process step=total elapsed_sec=%.3f", time.perf_counter() - started)
         return embeddings

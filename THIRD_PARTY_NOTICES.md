@@ -10,7 +10,7 @@ repository itself.
 - Local file: `worker/scripts/qwen3_vl_embedding.py`
 - License: Apache License 2.0
 - License text: `third_party/licenses/APACHE-2.0.txt`
-- Notes: This repository includes a modified copy of `src/models/qwen3_vl_embedding.py` adapted for the embedding-server worker.
+- Notes: This repository includes a copy of `src/models/qwen3_vl_embedding.py`.
 
 ## Qwen3-VL-Embedding-8B model
 

@@ -3,7 +3,9 @@ import hashlib
 import json
 import logging
 import math
+import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from worker_config import Config
@@ -76,7 +78,19 @@ class EmbeddingEngine:
                     model_kwargs["max_memory"] = max_memory
 
             log.info("embedding model init started")
-            self.embedder = Qwen3VLEmbedder(**model_kwargs)
+            stop_heartbeat = _start_heartbeat(
+                "qwen_embedder_init",
+                started,
+                lambda elapsed: log.info(
+                    "embedding model init running stage=%s elapsed_sec=%.3f",
+                    "qwen_embedder_init",
+                    elapsed,
+                ),
+            )
+            try:
+                self.embedder = Qwen3VLEmbedder(**model_kwargs)
+            finally:
+                stop_heartbeat()
             log.info("embedding model loaded elapsed_sec=%.3f", time.perf_counter() - started)
         except Exception:
             log.exception(
@@ -144,7 +158,7 @@ class EmbeddingEngine:
         assert self.torch is not None
 
         started = time.perf_counter()
-        log.info(
+        log.debug(
             "embedding inference started text_parts=%s image_count=%s",
             _count_text_parts(item),
             _count_images(item),
@@ -154,16 +168,16 @@ class EmbeddingEngine:
 
         step_started = time.perf_counter()
         vector = embeddings.detach().to("cpu").float()
-        log.info("embedding inference step=copy_to_cpu elapsed_sec=%.3f", time.perf_counter() - step_started)
-        if len(vector) != 1: # バッチサイズは1だから1のはず
+        log.debug("embedding inference step=copy_to_cpu elapsed_sec=%.3f", time.perf_counter() - step_started)
+        if len(vector) != 1:  # バッチサイズは1だから1のはず
             raise ValueError(f"embedding job must produce exactly one vector, got {len(vector)}")
 
         step_started = time.perf_counter()
         gc.collect()
         if self.torch.cuda.is_available():
             self.torch.cuda.empty_cache()
-        log.info("embedding inference step=cleanup elapsed_sec=%.3f", time.perf_counter() - step_started)
-        log.info(
+        log.debug("embedding inference step=cleanup elapsed_sec=%.3f", time.perf_counter() - step_started)
+        log.debug(
             "embedding inference completed dim=%s elapsed_sec=%.3f",
             len(vector[0]),
             time.perf_counter() - started,
@@ -186,6 +200,23 @@ def _normalize(vector: list[float]) -> list[float]:
     if norm == 0 or not math.isfinite(norm):
         raise ValueError("cannot normalize embedding vector")
     return [float(value / norm) for value in vector]
+
+
+def _start_heartbeat(
+    name: str,
+    started: float,
+    emit: Callable[[float], None],
+    interval_seconds: float = 30.0,
+) -> Callable[[], None]:
+    stop = threading.Event()
+
+    def run() -> None:
+        while not stop.wait(interval_seconds):
+            emit(time.perf_counter() - started)
+
+    thread = threading.Thread(target=run, name=f"{name}-heartbeat", daemon=True)
+    thread.start()
+    return stop.set
 
 
 def _count_text_parts(item: dict[str, Any]) -> int:

@@ -13,6 +13,13 @@ run = [
     "oapi-codegen -config ./api/oapi.interface.config.yaml ../openapi.yaml",
 ]
 
+[tasks.download-qwen3-vl-embedding]
+description = "Qwen3-VL-Embedding wrapperを upstream から取得"
+run = [
+    "mkdir -p worker/scripts",
+    "curl -fsSL https://raw.githubusercontent.com/QwenLM/Qwen3-VL-Embedding/main/src/models/qwen3_vl_embedding.py -o worker/scripts/qwen3_vl_embedding.py",
+]
+
 [tasks.up]
 description = "docker compose up --build"
 run = "docker compose up --build"
