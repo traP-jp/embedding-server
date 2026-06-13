@@ -11,6 +11,7 @@ services:
       - ../.env
     volumes:
       - "../server:/app/server"
+      - "../development:/app/development:ro"
       - go-build-cache:/root/.cache/go-build
       - go-mod-cache:/go/pkg/mod
       - embedding-data:/data
@@ -47,6 +48,17 @@ services:
         condition: service_started
     volumes:
       - embedding-data:/data
+    develop:
+      watch:
+        - action: sync+restart
+          path: ../worker
+          target: /app
+          ignore:
+            - __pycache__/
+            - "*.egg-info/"
+            - pyproject.toml
+        - action: rebuild
+          path: ../worker/pyproject.toml
 
 volumes:
   embedding-data:

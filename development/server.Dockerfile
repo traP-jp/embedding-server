@@ -14,4 +14,4 @@ RUN --mount=type=cache,target=${GOMODCACHE} \
 	--mount=type=cache,target=${GOCACHE} \
 	go mod download
 
-CMD ["air", "-c", ".air.toml"]
+CMD ["air", "-c", "/app/development/server.air.toml"]

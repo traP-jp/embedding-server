@@ -22,8 +22,8 @@ description = "docker compose down"
 run = "docker compose down"
 
 [tasks.dev-up]
-description = "開発環境のコンテナを立ち上げる"
-run = "docker compose -f development/compose.yaml up --build"
+description = "開発環境のコンテナをwatch付きで立ち上げる"
+run = "docker compose -f development/compose.yaml up --build --watch"
 
 [tasks.dev-down]
 description = "開発環境のコンテナを削除する"
