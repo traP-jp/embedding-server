@@ -2,6 +2,7 @@ package gormrepo
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"embedding-server/api/model"
 )
@@ -22,7 +24,18 @@ func GetDBClient() (*gorm.DB, error) {
 	sslmode := getenv("POSTGRES_SSLMODE", "disable")
 	dsn := postgresDSN(user, password, host, port, dbname, sslmode)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			logger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  logger.Warn,
+				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,        
+				Colorful:                  false,
+			},
+		),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("gorm open: %w", err)
 	}
