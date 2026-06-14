@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import time
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -14,11 +16,82 @@ from worker_api import ApiClient
 
 log = logging.getLogger("worker")
 
-
+# jobのログを記録するためのクラス
 @dataclass
-class BuildStats:
+class JobMetrics:
+    job_id: str
+    text_chars: int
+    images: int = 0
     ocr_chars: int = 0
-    ocr_elapsed_sec: float = 0.0
+    ocr_sec: float = 0.0
+    embed_sec: float = 0.0
+    report_sec: float = 0.0
+    started: float = field(default_factory=time.perf_counter, init=False)
+
+    @contextmanager
+    def measure_embedding(self) -> Iterator[None]:
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.embed_sec = time.perf_counter() - started
+
+    @contextmanager
+    def measure_report(self) -> Iterator[None]:
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.report_sec = time.perf_counter() - started
+
+    def start_ocr(self) -> float:
+        return time.perf_counter()
+
+    def finish_ocr(self, index: int, text: str, started: float) -> None:
+        elapsed_sec = time.perf_counter() - started
+        self.ocr_chars += len(text)
+        self.ocr_sec += elapsed_sec
+        log.debug(
+            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f preview=%r",
+            self.job_id,
+            index,
+            len(text),
+            elapsed_sec,
+            _preview(text),
+        )
+
+    def set_images(self, images: int) -> None:
+        self.images = images
+
+    def total_elapsed_sec(self) -> float:
+        return time.perf_counter() - self.started
+
+    def log_completed(self, vector_dim: int) -> None:
+        log.info(
+            (
+                "job completed id=%s text_chars=%s images=%s "
+                "ocr_chars=%s dim=%s "
+                "ocr_sec=%.3f embed_sec=%.3f "
+                "report_sec=%.3f total_sec=%.3f"
+            ),
+            self.job_id,
+            self.text_chars,
+            self.images,
+            self.ocr_chars,
+            vector_dim,
+            self.ocr_sec,
+            self.embed_sec,
+            self.report_sec,
+            self.total_elapsed_sec(),
+        )
+
+    def log_failed(self, error: Exception) -> None:
+        log.exception(
+            "job failed id=%s elapsed_sec=%.3f error=%s",
+            self.job_id,
+            self.total_elapsed_sec(),
+            error,
+        )
 
 
 def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict[str, Any]) -> None:
@@ -31,51 +104,32 @@ def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict
         fail_safely(api, job_id)
         return
 
-    started = time.perf_counter()
+    metrics = JobMetrics(job_id=job_id, text_chars=_payload_text_chars(payload))
     try:
-        item, build_stats = build_embedding_item(payload, ocr, job_id)
+        item = build_embedding_item(payload, ocr, metrics)
 
-        embedding_started = time.perf_counter()
-        vector = embedder.embed(item)
-        embedding_elapsed = time.perf_counter() - embedding_started
+        with metrics.measure_embedding():
+            vector = embedder.embed(item)
 
-        complete_started = time.perf_counter()
-        api.complete(job_id, vector)
-        report_elapsed = time.perf_counter() - complete_started
+        with metrics.measure_report():
+            api.complete(job_id, vector)
 
-        log.info(
-            (
-                "job completed id=%s text_chars=%s image_count=%s "
-                "ocr_chars=%s vector_dim=%s "
-                "ocr_elapsed_sec=%.3f embedding_elapsed_sec=%.3f "
-                "report_elapsed_sec=%.3f total_elapsed_sec=%.3f"
-            ),
-            job_id,
-            _payload_text_chars(payload),
-            _count_images(item),
-            build_stats.ocr_chars,
-            len(vector),
-            build_stats.ocr_elapsed_sec,
-            embedding_elapsed,
-            report_elapsed,
-            time.perf_counter() - started,
-        )
+        metrics.log_completed(len(vector))
     except Exception as e:
-        log.exception("job failed id=%s elapsed_sec=%.3f error=%s", job_id, time.perf_counter() - started, e)
+        metrics.log_failed(e)
         fail_safely(api, job_id)
 
 
 def build_embedding_item(
     payload: dict[str, Any],
     ocr: OcrEngine,
-    job_id: str = "",
-) -> tuple[dict[str, Any], BuildStats]:
-    stats = BuildStats()
+    metrics: JobMetrics,
+) -> dict[str, Any]:
     text = payload.get("text")
 
     if text is not None and not isinstance(text, str):
         raise TypeError("payload.text must be a string")
-        
+
     base_text = (text or "").strip()
 
     image_paths = payload.get("image_paths") or []
@@ -86,7 +140,7 @@ def build_embedding_item(
         raise ValueError("payload requires text or image_paths")
 
     if not image_paths:
-        return {"text": base_text}, stats
+        return {"text": base_text}
 
     validated_image_paths: list[str] = []
     text_parts = [base_text] if base_text else []
@@ -97,35 +151,24 @@ def build_embedding_item(
             raise FileNotFoundError(f"image not found: {image_path}")
         validated_image_paths.append(image_path)
 
-        ocr_started = time.perf_counter()
+        ocr_started = metrics.start_ocr()
         ocr_text = ocr.read_image_text(image_path)
-        ocr_elapsed = time.perf_counter() - ocr_started
-        stats.ocr_chars += len(ocr_text)
-        stats.ocr_elapsed_sec += ocr_elapsed
-        log.debug(
-            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f preview=%r",
-            job_id,
-            idx,
-            len(ocr_text),
-            ocr_elapsed,
-            _preview(ocr_text),
-        )
+        metrics.finish_ocr(idx, ocr_text, ocr_started)
         if ocr_text:
             label = "[OCR]" if len(image_paths) == 1 else f"[OCR image {idx}]"
             text_parts.append(f"{label}\n{ocr_text}")
 
     item: dict[str, Any] = {"image": validated_image_paths}
+    metrics.set_images(len(validated_image_paths))
     if text_parts:
         item["text"] = text_parts
 
-    return item, stats
+    return item
 
 
 def fail_safely(api: ApiClient, job_id: str) -> None:
     try:
-        log.warning("job report failure start id=%s", job_id)
         api.fail(job_id)
-        log.warning("job report failure complete id=%s", job_id)
     except httpx.HTTPStatusError as e:
         log.error(
             "fail job_id=%s http=%s body=%s",
@@ -135,15 +178,6 @@ def fail_safely(api: ApiClient, job_id: str) -> None:
         )
     except httpx.RequestError as e:
         log.error("fail job_id=%s request error=%s", job_id, e)
-
-
-def _count_images(item: dict[str, Any]) -> int:
-    image = item.get("image")
-    if isinstance(image, list):
-        return len(image)
-    if image:
-        return 1
-    return 0
 
 
 def _payload_text_chars(payload: dict[str, Any]) -> int:
