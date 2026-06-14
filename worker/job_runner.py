@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -12,6 +13,12 @@ from ocr_engine import OcrEngine
 from worker_api import ApiClient
 
 log = logging.getLogger("worker")
+
+
+@dataclass
+class BuildStats:
+    ocr_chars: int = 0
+    ocr_elapsed_sec: float = 0.0
 
 
 def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict[str, Any]) -> None:
@@ -24,34 +31,51 @@ def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict
         fail_safely(api, job_id)
         return
 
+    started = time.perf_counter()
     try:
-        started = time.perf_counter()
-        log.info(
-            "job start id=%s text_present=%s text_chars=%s image_count=%s",
-            job_id,
-            isinstance(payload.get("text"), str) and bool(payload.get("text")),
-            len(payload.get("text", "")) if isinstance(payload.get("text"), str) else 0,
-            len(payload.get("image_paths") or []) if isinstance(payload.get("image_paths") or [], list) else -1,
-        )
-        item = build_embedding_item(payload, ocr, job_id)
-        log.info(
-            "job input built id=%s text_parts=%s image_count=%s",
-            job_id,
-            _count_text_parts(item),
-            _count_images(item),
-        )
+        item, build_stats = build_embedding_item(payload, ocr, job_id)
+
+        embedding_started = time.perf_counter()
         vector = embedder.embed(item)
+        embedding_elapsed = time.perf_counter() - embedding_started
+
+        complete_started = time.perf_counter()
         api.complete(job_id, vector)
-        log.info("job complete id=%s dim=%s elapsed_sec=%.3f", job_id, len(vector), time.perf_counter() - started)
+        report_elapsed = time.perf_counter() - complete_started
+
+        log.info(
+            (
+                "job completed id=%s text_chars=%s image_count=%s "
+                "ocr_chars=%s vector_dim=%s "
+                "ocr_elapsed_sec=%.3f embedding_elapsed_sec=%.3f "
+                "report_elapsed_sec=%.3f total_elapsed_sec=%.3f"
+            ),
+            job_id,
+            _payload_text_chars(payload),
+            _count_images(item),
+            build_stats.ocr_chars,
+            len(vector),
+            build_stats.ocr_elapsed_sec,
+            embedding_elapsed,
+            report_elapsed,
+            time.perf_counter() - started,
+        )
     except Exception as e:
-        log.exception("job failed id=%s error=%s", job_id, e)
+        log.exception("job failed id=%s elapsed_sec=%.3f error=%s", job_id, time.perf_counter() - started, e)
         fail_safely(api, job_id)
 
 
-def build_embedding_item(payload: dict[str, Any], ocr: OcrEngine, job_id: str = "") -> dict[str, Any]:
+def build_embedding_item(
+    payload: dict[str, Any],
+    ocr: OcrEngine,
+    job_id: str = "",
+) -> tuple[dict[str, Any], BuildStats]:
+    stats = BuildStats()
     text = payload.get("text")
+
     if text is not None and not isinstance(text, str):
         raise TypeError("payload.text must be a string")
+        
     base_text = (text or "").strip()
 
     image_paths = payload.get("image_paths") or []
@@ -62,7 +86,7 @@ def build_embedding_item(payload: dict[str, Any], ocr: OcrEngine, job_id: str = 
         raise ValueError("payload requires text or image_paths")
 
     if not image_paths:
-        return {"text": base_text}
+        return {"text": base_text}, stats
 
     validated_image_paths: list[str] = []
     text_parts = [base_text] if base_text else []
@@ -75,12 +99,15 @@ def build_embedding_item(payload: dict[str, Any], ocr: OcrEngine, job_id: str = 
 
         ocr_started = time.perf_counter()
         ocr_text = ocr.read_image_text(image_path)
-        log.info(
+        ocr_elapsed = time.perf_counter() - ocr_started
+        stats.ocr_chars += len(ocr_text)
+        stats.ocr_elapsed_sec += ocr_elapsed
+        log.debug(
             "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f preview=%r",
             job_id,
             idx,
             len(ocr_text),
-            time.perf_counter() - ocr_started,
+            ocr_elapsed,
             _preview(ocr_text),
         )
         if ocr_text:
@@ -91,7 +118,7 @@ def build_embedding_item(payload: dict[str, Any], ocr: OcrEngine, job_id: str = 
     if text_parts:
         item["text"] = text_parts
 
-    return item
+    return item, stats
 
 
 def fail_safely(api: ApiClient, job_id: str) -> None:
@@ -110,15 +137,6 @@ def fail_safely(api: ApiClient, job_id: str) -> None:
         log.error("fail job_id=%s request error=%s", job_id, e)
 
 
-def _count_text_parts(item: dict[str, Any]) -> int:
-    text = item.get("text")
-    if isinstance(text, list):
-        return len(text)
-    if isinstance(text, str) and text:
-        return 1
-    return 0
-
-
 def _count_images(item: dict[str, Any]) -> int:
     image = item.get("image")
     if isinstance(image, list):
@@ -127,7 +145,14 @@ def _count_images(item: dict[str, Any]) -> int:
         return 1
     return 0
 
-# 一時的に
+
+def _payload_text_chars(payload: dict[str, Any]) -> int:
+    text = payload.get("text")
+    if isinstance(text, str):
+        return len(text)
+    return 0
+
+
 def _preview(text: str, limit: int = 120) -> str:
     text = " ".join(text.split())
     if len(text) <= limit:

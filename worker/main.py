@@ -15,6 +15,7 @@ from worker_api import ApiClient
 from worker_config import Config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("worker")
 
 _stop = False
