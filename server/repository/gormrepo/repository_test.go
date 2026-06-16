@@ -34,53 +34,70 @@ func setupTestDB(t *testing.T) *Repository {
 	return &Repository{db: db}
 }
 
+func createJob(t *testing.T, repo *Repository, ctx context.Context, id uuid.UUID, text string, imageKeys []string) {
+	t.Helper()
+	if err := repo.CreateJob(ctx, repository.CreateJobInput{
+		ID:              id,
+		Text:            text,
+		ImageObjectKeys: imageKeys,
+	}); err != nil {
+		t.Fatalf("CreateJob failed: %v", err)
+	}
+}
+
 // --- ジョブCRUDテスト ---
 
 func TestRepository_CreateJob(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 	jobID := uuid.New()
-	payload := json.RawMessage(`{"text":"hello"}`)
 
-	err := repo.CreateJob(ctx, jobID, payload)
-	if err != nil {
-		t.Fatalf("CreateJob failed: %v", err)
-	}
+	createJob(t, repo, ctx, jobID, "hello", []string{"jobs/test/input-0.png"})
 
 	state, err := repo.GetJobState(ctx, jobID)
 	if err != nil {
 		t.Fatalf("GetJobState failed: %v", err)
 	}
-	if state.Status != repository.StatusPending {
+	if state.Status != model.StatusPending {
 		t.Errorf("expected status pending, got %s", state.Status)
+	}
+
+	job, err := repo.GetJob(ctx, jobID)
+	if err != nil {
+		t.Fatalf("GetJob failed: %v", err)
+	}
+	if job.Text != "hello" {
+		t.Errorf("got text %q, want hello", job.Text)
+	}
+	if len(job.ImageObjectKeys) != 1 || job.ImageObjectKeys[0] != "jobs/test/input-0.png" {
+		t.Errorf("unexpected image keys: %+v", job.ImageObjectKeys)
 	}
 }
 
-func TestRepository_GetJobPayload(t *testing.T) {
+func TestRepository_GetJob(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 	jobID := uuid.New()
-	payload := json.RawMessage(`{"text":"hello"}`)
 
-	err := repo.CreateJob(ctx, jobID, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	createJob(t, repo, ctx, jobID, "hello", []string{"jobs/test/input-0.png"})
 
-	got, err := repo.GetJobPayload(ctx, jobID)
+	got, err := repo.GetJob(ctx, jobID)
 	if err != nil {
-		t.Fatalf("GetJobPayload failed: %v", err)
+		t.Fatalf("GetJob failed: %v", err)
 	}
-	if string(got) != string(payload) {
-		t.Errorf("got payload %s, want %s", got, payload)
+	if got.ID != jobID || got.Text != "hello" {
+		t.Errorf("unexpected job: %+v", got)
+	}
+	if len(got.ImageObjectKeys) != 1 || got.ImageObjectKeys[0] != "jobs/test/input-0.png" {
+		t.Errorf("unexpected image keys: %+v", got.ImageObjectKeys)
 	}
 }
 
-func TestRepository_GetJobPayload_NotFound(t *testing.T) {
+func TestRepository_GetJob_NotFound(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	_, err := repo.GetJobPayload(ctx, uuid.New())
+	_, err := repo.GetJob(ctx, uuid.New())
 	if !errors.Is(err, repository.ErrJobNotFound) {
 		t.Errorf("got error %v, want ErrJobNotFound", err)
 	}
@@ -102,29 +119,28 @@ func TestRepository_ClaimJob(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 	jobID := uuid.New()
-	payload := json.RawMessage(`{"text":"hello"}`)
 
-	err := repo.CreateJob(ctx, jobID, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	createJob(t, repo, ctx, jobID, "hello", []string{"jobs/test/input-0.png"})
 
-	id, gotPayload, err := repo.ClaimJob(ctx)
+	job, err := repo.ClaimJob(ctx)
 	if err != nil {
 		t.Fatalf("ClaimJob failed: %v", err)
 	}
-	if id != jobID {
-		t.Errorf("got job ID %s, want %s", id, jobID)
+	if job.ID != jobID {
+		t.Errorf("got job ID %s, want %s", job.ID, jobID)
 	}
-	if string(gotPayload) != string(payload) {
-		t.Errorf("got payload %s, want %s", gotPayload, payload)
+	if job.Text != "hello" {
+		t.Errorf("got text %q, want hello", job.Text)
+	}
+	if len(job.ImageObjectKeys) != 1 || job.ImageObjectKeys[0] != "jobs/test/input-0.png" {
+		t.Errorf("unexpected image keys: %+v", job.ImageObjectKeys)
 	}
 
 	state, err := repo.GetJobState(ctx, jobID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusProcessing {
+	if state.Status != model.StatusProcessing {
 		t.Errorf("expected status processing, got %s", state.Status)
 	}
 }
@@ -133,7 +149,7 @@ func TestRepository_ClaimJob_NoJob(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	_, _, err := repo.ClaimJob(ctx)
+	_, err := repo.ClaimJob(ctx)
 	if !errors.Is(err, repository.ErrNoJob) {
 		t.Errorf("got error %v, want ErrNoJob", err)
 	}
@@ -146,16 +162,16 @@ func TestRepository_ClaimJob_FIFO(t *testing.T) {
 	id1 := uuid.New()
 	id2 := uuid.New()
 
-	repo.CreateJob(ctx, id1, json.RawMessage(`{"text":"first"}`))
+	createJob(t, repo, ctx, id1, "first", nil)
 	time.Sleep(10 * time.Millisecond)
-	repo.CreateJob(ctx, id2, json.RawMessage(`{"text":"second"}`))
+	createJob(t, repo, ctx, id2, "second", nil)
 
-	claimedID, _, err := repo.ClaimJob(ctx)
+	claimed, err := repo.ClaimJob(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimedID != id1 {
-		t.Errorf("expected first job %s, got %s", id1, claimedID)
+	if claimed.ID != id1 {
+		t.Errorf("expected first job %s, got %s", id1, claimed.ID)
 	}
 }
 
@@ -164,7 +180,7 @@ func TestRepository_ClaimJob_ConcurrentSafety(t *testing.T) {
 	ctx := context.Background()
 
 	jobID := uuid.New()
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"test"}`))
+	createJob(t, repo, ctx, jobID, "test", nil)
 
 	const workers = 8
 	start := make(chan struct{})
@@ -177,9 +193,9 @@ func TestRepository_ClaimJob_ConcurrentSafety(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			id, _, err := repo.ClaimJob(ctx)
+			claimed, err := repo.ClaimJob(ctx)
 			if err == nil {
-				if id != jobID {
+				if claimed.ID != jobID {
 					errCh <- errors.New("claimed unexpected job id")
 					return
 				}
@@ -211,7 +227,7 @@ func TestRepository_CompleteJob(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"hello"}`))
+	createJob(t, repo, ctx, jobID, "hello", nil)
 	repo.ClaimJob(ctx)
 
 	result := json.RawMessage(`{"vector":[0.1, 0.2]}`)
@@ -224,7 +240,7 @@ func TestRepository_CompleteJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusCompleted {
+	if state.Status != model.StatusCompleted {
 		t.Errorf("expected status completed, got %s", state.Status)
 	}
 	if string(state.Result) != string(result) {
@@ -237,7 +253,7 @@ func TestRepository_CompleteJob_NotProcessing(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"hello"}`))
+	createJob(t, repo, ctx, jobID, "hello", nil)
 	// claimしない - ジョブはまだpending状態
 
 	err := repo.CompleteJob(ctx, jobID, json.RawMessage(`{"vector":[0.1]}`))
@@ -251,7 +267,7 @@ func TestRepository_CompleteJob_EmptyResult(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"hello"}`))
+	createJob(t, repo, ctx, jobID, "hello", nil)
 	repo.ClaimJob(ctx)
 
 	err := repo.CompleteJob(ctx, jobID, json.RawMessage(``))
@@ -275,7 +291,7 @@ func TestRepository_FailJob(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"hello"}`))
+	createJob(t, repo, ctx, jobID, "hello", nil)
 	repo.ClaimJob(ctx)
 
 	err := repo.FailJob(ctx, jobID)
@@ -287,7 +303,7 @@ func TestRepository_FailJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusFailed {
+	if state.Status != model.StatusFailed {
 		t.Errorf("expected status failed, got %s", state.Status)
 	}
 }
@@ -297,7 +313,7 @@ func TestRepository_FailJob_NotProcessing(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"hello"}`))
+	createJob(t, repo, ctx, jobID, "hello", nil)
 
 	err := repo.FailJob(ctx, jobID)
 	if !errors.Is(err, repository.ErrJobNotFound) {
@@ -321,9 +337,9 @@ func TestRepository_CountPendingJobs(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"a"}`))
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"b"}`))
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"c"}`))
+	createJob(t, repo, ctx, uuid.New(), "a", nil)
+	createJob(t, repo, ctx, uuid.New(), "b", nil)
+	createJob(t, repo, ctx, uuid.New(), "c", nil)
 
 	count, err := repo.CountPendingJobs(ctx)
 	if err != nil {
@@ -362,14 +378,14 @@ func TestRepository_CleanupExpiredJobs(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"old1"}`))
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"old2"}`))
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"new"}`))
+	createJob(t, repo, ctx, uuid.New(), "old1", nil)
+	createJob(t, repo, ctx, uuid.New(), "old2", nil)
+	createJob(t, repo, ctx, uuid.New(), "new", nil)
 
 	// 期限切れをシミュレートするため、「古い」ジョブのcreated_atを手動で設定
 	db := repo.db
 	db.Model(&model.EmbeddingJob{}).
-		Where("payload IN ?", []string{`{"text":"old1"}`, `{"text":"old2"}`}).
+		Where("text IN ?", []string{"old1", "old2"}).
 		Update("created_at", time.Now().Add(-7*time.Hour))
 
 	deleted, err := repo.CleanupExpiredJobs(ctx, 6*time.Hour)
@@ -390,7 +406,7 @@ func TestRepository_CleanupExpiredJobs_NoExpired(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	repo.CreateJob(ctx, uuid.New(), json.RawMessage(`{"text":"new"}`))
+	createJob(t, repo, ctx, uuid.New(), "new", nil)
 
 	deleted, err := repo.CleanupExpiredJobs(ctx, 6*time.Hour)
 	if err != nil {
@@ -398,6 +414,30 @@ func TestRepository_CleanupExpiredJobs_NoExpired(t *testing.T) {
 	}
 	if deleted != 0 {
 		t.Errorf("expected 0 deleted jobs, got %d", deleted)
+	}
+}
+
+func TestRepository_ExpiredJobImageKeys(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	createJob(t, repo, ctx, uuid.New(), "old", []string{"jobs/old/input-0.png"})
+	createJob(t, repo, ctx, uuid.New(), "new", []string{"jobs/new/input-0.png"})
+
+	db := repo.db
+	db.Model(&model.EmbeddingJobImage{}).
+		Where("object_key = ?", "jobs/old/input-0.png").
+		Update("created_at", time.Now().Add(-7*time.Hour))
+
+	keys, err := repo.ExpiredJobImageKeys(ctx, 6*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 expired image key, got %d", len(keys))
+	}
+	if keys[0] != "jobs/old/input-0.png" {
+		t.Errorf("got key %s, want old image key", keys[0])
 	}
 }
 
@@ -550,30 +590,30 @@ func TestRepository_FullLifecycle(t *testing.T) {
 
 	// 1. ジョブを作成
 	jobID := uuid.New()
-	payload := json.RawMessage(`{"text":"lifecycle test"}`)
-	if err := repo.CreateJob(ctx, jobID, payload); err != nil {
-		t.Fatalf("CreateJob failed: %v", err)
-	}
+	createJob(t, repo, ctx, jobID, "lifecycle test", []string{"jobs/lifecycle/input-0.png"})
 
 	// 2. pending状態を確認
 	state, err := repo.GetJobState(ctx, jobID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusPending {
+	if state.Status != model.StatusPending {
 		t.Errorf("expected pending, got %s", state.Status)
 	}
 
 	// 3. ジョブを取得
-	claimedID, gotPayload, err := repo.ClaimJob(ctx)
+	claimed, err := repo.ClaimJob(ctx)
 	if err != nil {
 		t.Fatalf("ClaimJob failed: %v", err)
 	}
-	if claimedID != jobID {
-		t.Errorf("claimed ID: got %s, want %s", claimedID, jobID)
+	if claimed.ID != jobID {
+		t.Errorf("claimed ID: got %s, want %s", claimed.ID, jobID)
 	}
-	if string(gotPayload) != string(payload) {
-		t.Errorf("payload mismatch")
+	if claimed.Text != "lifecycle test" {
+		t.Errorf("text mismatch: got %q", claimed.Text)
+	}
+	if len(claimed.ImageObjectKeys) != 1 || claimed.ImageObjectKeys[0] != "jobs/lifecycle/input-0.png" {
+		t.Errorf("image keys mismatch: %+v", claimed.ImageObjectKeys)
 	}
 
 	// 4. processing状態を確認
@@ -581,7 +621,7 @@ func TestRepository_FullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusProcessing {
+	if state.Status != model.StatusProcessing {
 		t.Errorf("expected processing, got %s", state.Status)
 	}
 
@@ -596,20 +636,20 @@ func TestRepository_FullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusCompleted {
+	if state.Status != model.StatusCompleted {
 		t.Errorf("expected completed, got %s", state.Status)
 	}
 	if string(state.Result) != string(result) {
 		t.Errorf("result mismatch: got %s, want %s", state.Result, result)
 	}
 
-	// 7. ペイロードが引き続きアクセス可能であることを確認
-	gotPayload2, err := repo.GetJobPayload(ctx, jobID)
+	// 7. ジョブ内容が引き続きアクセス可能であることを確認
+	gotJob, err := repo.GetJob(ctx, jobID)
 	if err != nil {
-		t.Fatalf("GetJobPayload failed: %v", err)
+		t.Fatalf("GetJob failed: %v", err)
 	}
-	if string(gotPayload2) != string(payload) {
-		t.Errorf("payload mismatch after completion")
+	if gotJob.Text != "lifecycle test" {
+		t.Errorf("job text mismatch after completion")
 	}
 }
 
@@ -618,7 +658,7 @@ func TestRepository_FailLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	jobID := uuid.New()
-	repo.CreateJob(ctx, jobID, json.RawMessage(`{"text":"fail test"}`))
+	createJob(t, repo, ctx, jobID, "fail test", nil)
 	repo.ClaimJob(ctx)
 
 	if err := repo.FailJob(ctx, jobID); err != nil {
@@ -629,7 +669,7 @@ func TestRepository_FailLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != repository.StatusFailed {
+	if state.Status != model.StatusFailed {
 		t.Errorf("expected failed, got %s", state.Status)
 	}
 }

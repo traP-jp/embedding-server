@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"mime/multipart"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"embedding-server/api/api"
+	"embedding-server/api/model"
 	"embedding-server/api/repository"
 
 	"github.com/google/uuid"
@@ -24,9 +26,9 @@ func TestPostEmbeddingsText_Success(t *testing.T) {
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID, payload interface{}) error {
-			idCh <- id
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, input repository.CreateJobInput) error {
+			idCh <- input.ID
 			return nil
 		},
 	)
@@ -34,7 +36,7 @@ func TestPostEmbeddingsText_Success(t *testing.T) {
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
 			return repository.JobState{
-				Status: repository.StatusCompleted,
+				Status: model.StatusCompleted,
 				Result: json.RawMessage(`{"vector":[0.1, 0.2]}`),
 			}, nil
 		},
@@ -104,7 +106,7 @@ func TestPostEmbeddingsText_InternalError(t *testing.T) {
 
 	s.cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	dbErr := errors.New("database connection lost")
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
@@ -152,9 +154,9 @@ func TestPostEmbeddingsImages_Success(t *testing.T) {
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID, payload interface{}) error {
-			idCh <- id
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, input repository.CreateJobInput) error {
+			idCh <- input.ID
 			return nil
 		},
 	)
@@ -162,7 +164,7 @@ func TestPostEmbeddingsImages_Success(t *testing.T) {
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
 			return repository.JobState{
-				Status: repository.StatusCompleted,
+				Status: model.StatusCompleted,
 				Result: json.RawMessage(`{"vector":[0.3]}`),
 			}, nil
 		},
@@ -289,7 +291,7 @@ func TestPostEmbeddingsImages_InternalError(t *testing.T) {
 	})
 
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	dbErr := errors.New("database connection lost")
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
@@ -317,9 +319,9 @@ func TestPostEmbeddingsMultimodal_Success(t *testing.T) {
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID, payload interface{}) error {
-			idCh <- id
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, input repository.CreateJobInput) error {
+			idCh <- input.ID
 			return nil
 		},
 	)
@@ -327,7 +329,7 @@ func TestPostEmbeddingsMultimodal_Success(t *testing.T) {
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
 			return repository.JobState{
-				Status: repository.StatusCompleted,
+				Status: model.StatusCompleted,
 				Result: json.RawMessage(`{"vector":[0.4]}`),
 			}, nil
 		},
@@ -359,9 +361,9 @@ func TestPostEmbeddingsMultimodal_TextOnly(t *testing.T) {
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID, payload interface{}) error {
-			idCh <- id
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, input repository.CreateJobInput) error {
+			idCh <- input.ID
 			return nil
 		},
 	)
@@ -369,7 +371,7 @@ func TestPostEmbeddingsMultimodal_TextOnly(t *testing.T) {
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
 			return repository.JobState{
-				Status: repository.StatusCompleted,
+				Status: model.StatusCompleted,
 				Result: json.RawMessage(`{"vector":[0.5]}`),
 			}, nil
 		},
@@ -397,9 +399,9 @@ func TestPostEmbeddingsMultimodal_ImagesOnly(t *testing.T) {
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID, payload interface{}) error {
-			idCh <- id
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, input repository.CreateJobInput) error {
+			idCh <- input.ID
 			return nil
 		},
 	)
@@ -407,7 +409,7 @@ func TestPostEmbeddingsMultimodal_ImagesOnly(t *testing.T) {
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
 			return repository.JobState{
-				Status: repository.StatusCompleted,
+				Status: model.StatusCompleted,
 				Result: json.RawMessage(`{"vector":[0.6]}`),
 			}, nil
 		},
@@ -478,7 +480,7 @@ func TestPostEmbeddingsMultimodal_InternalError(t *testing.T) {
 	})
 
 	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	dbErr := errors.New("database connection lost")
 	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(

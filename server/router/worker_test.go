@@ -2,13 +2,9 @@ package router
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"embedding-server/api/api"
 	"embedding-server/api/repository"
 
 	"github.com/google/uuid"
@@ -19,10 +15,7 @@ func TestClaimWorkerJob_Success(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	payload := api.WorkerJobPayload{Text: ptrString("hello")}
-	payloadRaw, _ := json.Marshal(payload)
-
-	s.job.EXPECT().ClaimJob(gomock.Any()).Return(jobID, payloadRaw, nil)
+	s.job.EXPECT().ClaimJob(gomock.Any()).Return(&repository.JobRecord{ID: jobID, Text: "hello"}, nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/claim", "application/json", nil)
 
@@ -54,7 +47,7 @@ func TestClaimWorkerJob_Success(t *testing.T) {
 func TestClaimWorkerJob_NoJob(t *testing.T) {
 	s := setupTest(t)
 
-	s.job.EXPECT().ClaimJob(gomock.Any()).Return(uuid.Nil, nil, repository.ErrNoJob)
+	s.job.EXPECT().ClaimJob(gomock.Any()).Return(&repository.JobRecord{}, repository.ErrNoJob)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/claim", "application/json", nil)
 
@@ -64,21 +57,7 @@ func TestClaimWorkerJob_NoJob(t *testing.T) {
 func TestClaimWorkerJob_InternalError(t *testing.T) {
 	s := setupTest(t)
 
-	s.job.EXPECT().ClaimJob(gomock.Any()).Return(uuid.Nil, nil, repository.ErrJobNotFound)
-
-	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/claim", "application/json", nil)
-
-	assertStatus(t, rec, http.StatusInternalServerError)
-	assertErrorMessage(t, rec, "internal error")
-}
-
-func TestClaimWorkerJob_InvalidPayload(t *testing.T) {
-	s := setupTest(t)
-
-	jobID := uuid.New()
-	invalidPayload := json.RawMessage(`not valid json`)
-
-	s.job.EXPECT().ClaimJob(gomock.Any()).Return(jobID, invalidPayload, nil)
+	s.job.EXPECT().ClaimJob(gomock.Any()).Return(&repository.JobRecord{}, repository.ErrJobNotFound)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/claim", "application/json", nil)
 
@@ -90,10 +69,7 @@ func TestCompleteWorkerJob_Success(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	payload := api.WorkerJobPayload{Text: ptrString("hello")}
-	payloadRaw, _ := json.Marshal(payload)
-
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(payloadRaw, nil)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID, Text: "hello"}, nil)
 	s.job.EXPECT().CompleteJob(gomock.Any(), jobID, gomock.Any()).Return(nil)
 	s.cache.EXPECT().SetTextCache(gomock.Any(), "hello", gomock.Any()).Return(nil)
 
@@ -120,7 +96,7 @@ func TestCompleteWorkerJob_JobNotFound(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(nil, repository.ErrJobNotFound)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{}, repository.ErrJobNotFound)
 
 	body := `{"result":{"vector":[0.1]}}`
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/complete",
@@ -134,7 +110,7 @@ func TestCompleteWorkerJob_InternalError(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(nil, repository.ErrNoJob)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{}, repository.ErrNoJob)
 
 	body := `{"result":{"vector":[0.1]}}`
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/complete",
@@ -148,10 +124,7 @@ func TestCompleteWorkerJob_TextJobCache(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	payload := api.WorkerJobPayload{Text: ptrString("test text")}
-	payloadRaw, _ := json.Marshal(payload)
-
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(payloadRaw, nil)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID, Text: "test text"}, nil)
 	s.job.EXPECT().CompleteJob(gomock.Any(), jobID, gomock.Any()).Return(nil)
 	s.cache.EXPECT().SetTextCache(gomock.Any(), "test text", gomock.Any()).Return(nil)
 
@@ -166,11 +139,10 @@ func TestCompleteWorkerJob_ImageJobNoCache(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	imagePaths := []string{"/data/jobs/test/1.png"}
-	payload := api.WorkerJobPayload{ImagePaths: &imagePaths}
-	payloadRaw, _ := json.Marshal(payload)
-
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(payloadRaw, nil)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{
+		ID:              jobID,
+		ImageObjectKeys: []string{"jobs/" + jobID.String() + "/0"},
+	}, nil)
 	s.job.EXPECT().CompleteJob(gomock.Any(), jobID, gomock.Any()).Return(nil)
 	// SetTextCacheの期待値は設定しない - 画像ジョブはキャッシュされないべき
 
@@ -185,15 +157,10 @@ func TestCompleteWorkerJob_ImageDirCleanup(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	imagePaths, err := s.jobFile.WriteJobImages(jobID, [][]byte{pngHeader})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := api.WorkerJobPayload{ImagePaths: &imagePaths}
-	payloadRaw, _ := json.Marshal(payload)
+	key := "jobs/" + jobID.String() + "/0"
+	s.fakeS3.putObject(key, []byte("image"))
 
-	s.job.EXPECT().GetJobPayload(gomock.Any(), jobID).Return(payloadRaw, nil)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID, ImageObjectKeys: []string{key}}, nil)
 	s.job.EXPECT().CompleteJob(gomock.Any(), jobID, gomock.Any()).Return(nil)
 
 	body := `{"result":{"vector":[0.1]}}`
@@ -201,8 +168,8 @@ func TestCompleteWorkerJob_ImageDirCleanup(t *testing.T) {
 		"application/json", bytes.NewReader([]byte(body)))
 
 	assertStatus(t, rec, http.StatusNoContent)
-	if _, err := os.Stat(filepath.Dir(imagePaths[0])); !os.IsNotExist(err) {
-		t.Fatalf("expected image directory to be removed, got err=%v", err)
+	if s.fakeS3.hasObject(key) {
+		t.Fatalf("expected image object %q to be removed", key)
 	}
 }
 
@@ -210,6 +177,7 @@ func TestFailWorkerJob_Success(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID}, nil)
 	s.job.EXPECT().FailJob(gomock.Any(), jobID).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/fail",
@@ -222,7 +190,7 @@ func TestFailWorkerJob_JobNotFound(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	s.job.EXPECT().FailJob(gomock.Any(), jobID).Return(repository.ErrJobNotFound)
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{}, repository.ErrJobNotFound)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/fail",
 		"application/json", nil)
@@ -231,10 +199,24 @@ func TestFailWorkerJob_JobNotFound(t *testing.T) {
 	assertErrorMessage(t, rec, "not found")
 }
 
+func TestFailWorkerJob_LoadJobError(t *testing.T) {
+	s := setupTest(t)
+
+	jobID := uuid.New()
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{}, repository.ErrNoJob)
+
+	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/fail",
+		"application/json", nil)
+
+	assertStatus(t, rec, http.StatusInternalServerError)
+	assertErrorMessage(t, rec, "internal error")
+}
+
 func TestFailWorkerJob_InternalError(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID}, nil)
 	s.job.EXPECT().FailJob(gomock.Any(), jobID).Return(repository.ErrNoJob)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/fail",
@@ -248,18 +230,17 @@ func TestFailWorkerJob_ImageDirCleanup(t *testing.T) {
 	s := setupTest(t)
 
 	jobID := uuid.New()
-	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	imagePaths, err := s.jobFile.WriteJobImages(jobID, [][]byte{pngHeader})
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := "jobs/" + jobID.String() + "/0"
+	s.fakeS3.putObject(key, []byte("image"))
+
+	s.job.EXPECT().GetJob(gomock.Any(), jobID).Return(&repository.JobRecord{ID: jobID, ImageObjectKeys: []string{key}}, nil)
 	s.job.EXPECT().FailJob(gomock.Any(), jobID).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/internal/worker/jobs/"+jobID.String()+"/fail",
 		"application/json", nil)
 
 	assertStatus(t, rec, http.StatusNoContent)
-	if _, err := os.Stat(filepath.Dir(imagePaths[0])); !os.IsNotExist(err) {
-		t.Fatalf("expected image directory to be removed, got err=%v", err)
+	if s.fakeS3.hasObject(key) {
+		t.Fatalf("expected image object %q to be removed", key)
 	}
 }

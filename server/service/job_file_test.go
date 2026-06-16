@@ -1,238 +1,194 @@
 package service
 
 import (
+	"context"
+	"encoding/xml"
 	"errors"
-	"os"
-	"path/filepath"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 )
 
-func TestJobFileService_WriteJobImages_PNG(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
+type fakeS3Server struct {
+	server     *httptest.Server
+	mu         sync.Mutex
+	objects    map[string][]byte
+	failDelete bool
+}
+
+func newTestJobFileService(t *testing.T) *JobFileService {
+	t.Helper()
+	svc, _ := newFakeS3JobFileService(t)
+	return svc
+}
+
+func newFakeS3JobFileService(t *testing.T) (*JobFileService, *fakeS3Server) {
+	t.Helper()
+
+	fake := &fakeS3Server{objects: map[string][]byte{}}
+	fake.server = httptest.NewServer(http.HandlerFunc(fake.handle))
+	t.Cleanup(fake.server.Close)
+
+	svc, err := NewS3JobFileService(context.Background(), S3JobFileConfig{
+		Endpoint:        fake.server.URL,
+		Bucket:          "test-bucket",
+		Region:          "auto",
+		AccessKeyID:     "test-access-key",
+		SecretAccessKey: "test-secret-key",
+		Prefix:          "jobs",
+		UsePathStyle:    true,
+	})
+	if err != nil {
+		t.Fatalf("new job file service: %v", err)
+	}
+	return svc, fake
+}
+
+func (f *fakeS3Server) handle(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodPut:
+		key := strings.TrimPrefix(r.URL.Path, "/test-bucket/")
+		body, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.objects[key] = body
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	case r.Method == http.MethodPost && r.URL.Query().Has("delete"):
+		f.mu.Lock()
+		failDelete := f.failDelete
+		f.mu.Unlock()
+		if failDelete {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+
+		var req struct {
+			Objects []struct {
+				Key string `xml:"Key"`
+			} `xml:"Object"`
+		}
+		_ = xml.NewDecoder(r.Body).Decode(&req)
+		f.mu.Lock()
+		for _, obj := range req.Objects {
+			delete(f.objects, obj.Key)
+		}
+		f.mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>`))
+	default:
+		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}
+}
+
+func (f *fakeS3Server) hasObject(key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.objects[key]
+	return ok
+}
+
+func (f *fakeS3Server) objectCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.objects)
+}
+
+func TestJobFileService_StoreJobImages_PNG(t *testing.T) {
+	svc, fake := newFakeS3JobFileService(t)
 	jobID := uuid.New()
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	images := [][]byte{pngHeader}
-
-	paths, err := svc.WriteJobImages(jobID, images)
+	stored, err := svc.StoreJobImages(context.Background(), jobID, [][]byte{pngHeader})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(paths) != 1 {
-		t.Fatalf("expected 1 path, got %d", len(paths))
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 object key, got %d", len(stored))
 	}
 
-	// ファイルが存在することを確認
-	if _, err := os.Stat(paths[0]); err != nil {
-		t.Fatalf("file not found: %v", err)
+	expectedKey := "jobs/" + jobID.String() + "/0"
+	if stored[0] != expectedKey {
+		t.Fatalf("object key: got %q, want %q", stored[0], expectedKey)
 	}
-
-	// ファイル名のパターンを確認
-	expectedName := "input-0.png"
-	if filepath.Base(paths[0]) != expectedName {
-		t.Errorf("expected filename %q, got %q", expectedName, filepath.Base(paths[0]))
-	}
-
-	// パーミッションを確認
-	info, err := os.Stat(paths[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("expected permissions 0o600, got %o", info.Mode().Perm())
+	if !fake.hasObject(expectedKey) {
+		t.Fatalf("expected object %q to be uploaded", expectedKey)
 	}
 }
 
-func TestJobFileService_WriteJobImages_JPEG(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
-	jobID := uuid.New()
-
-	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0}
-	images := [][]byte{jpegHeader}
-
-	paths, err := svc.WriteJobImages(jobID, images)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	expectedName := "input-0.jpg"
-	if filepath.Base(paths[0]) != expectedName {
-		t.Errorf("expected filename %q, got %q", expectedName, filepath.Base(paths[0]))
-	}
-}
-
-func TestJobFileService_WriteJobImages_WebP(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
-	jobID := uuid.New()
-
-	webpHeader := []byte{0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20}
-	images := [][]byte{webpHeader}
-
-	paths, err := svc.WriteJobImages(jobID, images)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	expectedName := "input-0.webp"
-	if filepath.Base(paths[0]) != expectedName {
-		t.Errorf("expected filename %q, got %q", expectedName, filepath.Base(paths[0]))
-	}
-}
-
-func TestJobFileService_WriteJobImages_Multiple(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
+func TestJobFileService_StoreJobImages_Multiple(t *testing.T) {
+	svc, fake := newFakeS3JobFileService(t)
 	jobID := uuid.New()
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0}
-	images := [][]byte{pngHeader, jpegHeader}
-
-	paths, err := svc.WriteJobImages(jobID, images)
+	stored, err := svc.StoreJobImages(context.Background(), jobID, [][]byte{pngHeader, jpegHeader})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(paths) != 2 {
-		t.Fatalf("expected 2 paths, got %d", len(paths))
+	if len(stored) != 2 {
+		t.Fatalf("expected 2 object keys, got %d", len(stored))
 	}
-
-	if filepath.Base(paths[0]) != "input-0.png" {
-		t.Errorf("expected filename %q, got %q", "input-0.png", filepath.Base(paths[0]))
+	if !fake.hasObject("jobs/" + jobID.String() + "/0") {
+		t.Fatal("expected first object to be uploaded")
 	}
-	if filepath.Base(paths[1]) != "input-1.jpg" {
-		t.Errorf("expected filename %q, got %q", "input-1.jpg", filepath.Base(paths[1]))
+	if !fake.hasObject("jobs/" + jobID.String() + "/1") {
+		t.Fatal("expected second object to be uploaded")
 	}
 }
 
-func TestJobFileService_WriteJobImages_UnsupportedType(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
+func TestJobFileService_StoreJobImages_UnsupportedType(t *testing.T) {
+	svc, _ := newFakeS3JobFileService(t)
 	jobID := uuid.New()
 
-	images := [][]byte{[]byte("not an image")}
-
-	_, err := svc.WriteJobImages(jobID, images)
+	_, err := svc.StoreJobImages(context.Background(), jobID, [][]byte{[]byte("not an image")})
 	if !errors.Is(err, errUnsupportedJobImageType) {
 		t.Fatalf("expected errUnsupportedJobImageType, got %v", err)
 	}
 }
 
-func TestJobFileService_WriteJobImages_DirectoryCreation(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
+func TestJobFileService_StoreJobImages_UnsupportedTypeAfterValidImage(t *testing.T) {
+	svc, fake := newFakeS3JobFileService(t)
 	jobID := uuid.New()
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	images := [][]byte{pngHeader}
-
-	_, err := svc.WriteJobImages(jobID, images)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := svc.StoreJobImages(context.Background(), jobID, [][]byte{pngHeader, []byte("not an image")})
+	if !errors.Is(err, errUnsupportedJobImageType) {
+		t.Fatalf("expected errUnsupportedJobImageType, got %v", err)
 	}
-
-	// ディレクトリが正しいパーミッションで作成されたことを確認
-	jobDir := svc.jobImageDir(jobID)
-	info, err := os.Stat(jobDir)
-	if err != nil {
-		t.Fatalf("directory not found: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected directory")
-	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("expected directory permissions 0o700, got %o", info.Mode().Perm())
+	if fake.objectCount() != 0 {
+		t.Fatalf("expected no uploaded objects, got %d", fake.objectCount())
 	}
 }
 
-func TestJobFileService_WriteJobImages_FileNamingPattern(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
+func TestJobFileService_RemoveJobImages(t *testing.T) {
+	svc, fake := newFakeS3JobFileService(t)
 	jobID := uuid.New()
-
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	images := [][]byte{pngHeader, pngHeader, pngHeader}
 
-	paths, err := svc.WriteJobImages(jobID, images)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	expectedDir := svc.jobImageDir(jobID)
-	for i, p := range paths {
-		expected := filepath.Join(expectedDir, "input-"+string(rune('0'+i))+".png")
-		// 適切なインデックスフォーマットを使用
-		expected = filepath.Join(expectedDir, "input-"+itoa(i)+".png")
-		if p != expected {
-			t.Errorf("path[%d]: got %q, want %q", i, p, expected)
-		}
-	}
-}
-
-func TestJobFileService_RemoveJobImageDir_Exists(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
-	jobID := uuid.New()
-
-	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	_, err := svc.WriteJobImages(jobID, [][]byte{pngHeader})
+	stored, err := svc.StoreJobImages(context.Background(), jobID, [][]byte{pngHeader})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if fake.objectCount() != 1 {
+		t.Fatalf("expected 1 uploaded object, got %d", fake.objectCount())
+	}
 
-	err = svc.RemoveJobImageDir(jobID)
-	if err != nil {
+	if err := svc.RemoveJobImages(context.Background(), stored); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// ディレクトリが削除されたことを確認
-	if _, err := os.Stat(svc.jobImageDir(jobID)); !os.IsNotExist(err) {
-		t.Error("expected directory to be removed")
+	if fake.objectCount() != 0 {
+		t.Fatalf("expected all objects to be deleted, got %d", fake.objectCount())
 	}
 }
 
-func TestJobFileService_RemoveJobImageDir_NotExists(t *testing.T) {
-	dataDir := t.TempDir()
-	svc := NewJobFileService(dataDir)
-	jobID := uuid.New()
-
-	// 存在しないディレクトリを削除 - エラーにならないはず（os.RemoveAllは冪等）
-	err := svc.RemoveJobImageDir(jobID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestNewS3JobFileService_InvalidConfig(t *testing.T) {
+	_, err := NewS3JobFileService(context.Background(), S3JobFileConfig{})
+	if !errors.Is(err, errInvalidS3JobFileConfig) {
+		t.Fatalf("expected errInvalidS3JobFileConfig, got %v", err)
 	}
-}
-
-func TestJobFileService_DataDir_Custom(t *testing.T) {
-	customDir := "/custom/data/path"
-	svc := NewJobFileService(customDir)
-
-	if svc.DataDir() != customDir {
-		t.Errorf("expected DataDir %q, got %q", customDir, svc.DataDir())
-	}
-}
-
-func TestJobFileService_DataDir_Default(t *testing.T) {
-	svc := NewJobFileService("")
-
-	if svc.DataDir() != defaultJobDataDir {
-		t.Errorf("expected default DataDir %q, got %q", defaultJobDataDir, svc.DataDir())
-	}
-}
-
-// itoaは、整数を文字列表現に変換する。
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }
