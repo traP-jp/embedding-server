@@ -10,32 +10,32 @@ import (
 	mid "github.com/labstack/echo/v5/middleware"
 
 	"embedding-server/api/api"
+	"embedding-server/api/config"
 	"embedding-server/api/repository/gormrepo"
 	"embedding-server/api/router"
 	"embedding-server/api/service"
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load config", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	opts := &slog.HandlerOptions{
 		Level:     slog.LevelInfo,
-		AddSource: os.Getenv("APP_ENV") == "debug",
+		AddSource: cfg.AppEnv == "debug",
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
 
-	db, err := gormrepo.GetDBClient()
+	db, err := gormrepo.GetDBClient(cfg.Database)
 	if err != nil {
 		slog.Error("failed to connect database", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	jobFile, err := service.NewS3JobFileService(context.Background(), service.S3JobFileConfig{
-		Endpoint:        os.Getenv("S3_ENDPOINT_URL"),
-		Bucket:          os.Getenv("S3_BUCKET"),
-		Region:          os.Getenv("S3_REGION"),
-		AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
-		SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
-		Prefix:          os.Getenv("S3_PREFIX"),
-	})
+	jobFile, err := service.NewS3JobFileService(context.Background(), cfg.S3)
 	if err != nil {
 		slog.Error("failed to initialize job image object storage", slog.Any("error", err))
 		os.Exit(1)
@@ -89,13 +89,8 @@ func main() {
 	}))
 	api.RegisterHandlers(e, strictHandlers)
 
-	port := os.Getenv("API_PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	slog.Info("listening", slog.String("port", port))
-	if err := e.Start(":" + port); err != nil {
+	slog.Info("listening", slog.String("port", cfg.APIPort))
+	if err := e.Start(":" + cfg.APIPort); err != nil {
 		slog.Error("server error", slog.Any("error", err))
 		os.Exit(1)
 	}

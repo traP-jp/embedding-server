@@ -12,18 +12,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"embedding-server/api/config"
 	"embedding-server/api/model"
 )
 
-func GetDBClient() (*gorm.DB, error) {
-	host := getenv("POSTGRES_HOST", "postgres")
-	port := getenv("POSTGRES_PORT", "5432")
-	user := getenv("POSTGRES_USER", "postgres")
-	password := getenv("POSTGRES_PASSWORD", "password")
-	dbname := getenv("POSTGRES_DB", "embedding")
-	sslmode := getenv("POSTGRES_SSLMODE", "disable")
-	dsn := postgresDSN(user, password, host, port, dbname, sslmode)
-
+func GetDBClient(cfg config.DBConfig) (*gorm.DB, error) {
+	dsn := postgresDSN(cfg)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.New(
 			log.New(os.Stdout, "\r\n", log.LstdFlags),
@@ -31,7 +25,7 @@ func GetDBClient() (*gorm.DB, error) {
 				SlowThreshold:             200 * time.Millisecond,
 				LogLevel:                  logger.Warn,
 				IgnoreRecordNotFoundError: true,
-				ParameterizedQueries:      true,        
+				ParameterizedQueries:      true,
 				Colorful:                  false,
 			},
 		),
@@ -61,23 +55,15 @@ func GetDBClient() (*gorm.DB, error) {
 	return db, nil
 }
 
-func getenv(key string, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func postgresDSN(user, password, host, port, dbname, sslmode string) string {
+func postgresDSN(cfg config.DBConfig) string {
 	connURL := &url.URL{
 		Scheme: "postgres",
-		User:   url.UserPassword(user, password),
-		Host:   net.JoinHostPort(host, port),
-		Path:   dbname,
+		User:   url.UserPassword(cfg.User, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, cfg.Port),
+		Path:   cfg.DBName,
 	}
 	q := connURL.Query()
-	q.Set("sslmode", sslmode)
+	q.Set("sslmode", cfg.SSLMode)
 	connURL.RawQuery = q.Encode()
 	return connURL.String()
 }

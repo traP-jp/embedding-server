@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"embedding-server/api/config"
 )
 
 type fakeS3Server struct {
@@ -34,7 +36,7 @@ func newFakeS3JobFileService(t *testing.T) (*JobFileService, *fakeS3Server) {
 	fake.server = httptest.NewServer(http.HandlerFunc(fake.handle))
 	t.Cleanup(fake.server.Close)
 
-	svc, err := NewS3JobFileService(context.Background(), S3JobFileConfig{
+	svc, err := NewS3JobFileService(context.Background(), config.S3Config{
 		Endpoint:        fake.server.URL,
 		Bucket:          "test-bucket",
 		Region:          "auto",
@@ -186,7 +188,7 @@ func TestJobFileService_RemoveJobImages(t *testing.T) {
 }
 
 func TestNewS3JobFileService_InvalidConfig(t *testing.T) {
-	_, err := NewS3JobFileService(context.Background(), S3JobFileConfig{})
+	_, err := NewS3JobFileService(context.Background(), config.S3Config{})
 	if !errors.Is(err, errInvalidS3JobFileConfig) {
 		t.Fatalf("expected errInvalidS3JobFileConfig, got %v", err)
 	}

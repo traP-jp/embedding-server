@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"embedding-server/api/api"
+	"embedding-server/api/config"
 	"embedding-server/api/repository"
 	"embedding-server/api/repository/mock_repository"
 	"embedding-server/api/service"
@@ -79,7 +80,7 @@ func newFakeS3JobFileService(t *testing.T) (*service.JobFileService, *fakeS3Serv
 	fake.server = httptest.NewServer(http.HandlerFunc(fake.handle))
 	t.Cleanup(fake.server.Close)
 
-	jobFile, err := service.NewS3JobFileService(context.Background(), service.S3JobFileConfig{
+	jobFile, err := service.NewS3JobFileService(context.Background(), config.S3Config{
 		Endpoint:        fake.server.URL,
 		Bucket:          "test-bucket",
 		Region:          "auto",

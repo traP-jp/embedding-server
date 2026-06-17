@@ -9,11 +9,13 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
+
+	"embedding-server/api/config"
 )
 
 var errUnsupportedJobImageType = errors.New("unsupported job image type")
@@ -25,23 +27,14 @@ type JobFileService struct {
 	prefix string
 }
 
-type S3JobFileConfig struct {
-	Endpoint        string
-	Bucket          string
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-	Prefix          string
-}
-
-func NewS3JobFileService(ctx context.Context, cfg S3JobFileConfig) (*JobFileService, error) {
+func NewS3JobFileService(ctx context.Context, cfg config.S3Config) (*JobFileService, error) {
 	if cfg.Endpoint == "" || cfg.Bucket == "" || cfg.Region == "" || cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
 		return nil, errInvalidS3JobFileConfig
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(cfg.Region),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")),
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(cfg.Region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")),
 	)
 	if err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.3
 	github.com/google/uuid v1.6.0
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/labstack/echo/v5 v5.1.1
 	github.com/oapi-codegen/runtime v1.4.0
 	go.uber.org/mock v0.6.0
