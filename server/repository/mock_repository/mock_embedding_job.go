@@ -45,13 +45,12 @@ func (m *MockJobRepository) EXPECT() *MockJobRepositoryMockRecorder {
 }
 
 // ClaimJob mocks base method.
-func (m *MockJobRepository) ClaimJob(ctx context.Context) (uuid.UUID, json.RawMessage, error) {
+func (m *MockJobRepository) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ClaimJob", ctx)
-	ret0, _ := ret[0].(uuid.UUID)
-	ret1, _ := ret[1].(json.RawMessage)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret0, _ := ret[0].(*repository.JobRecord)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // ClaimJob indicates an expected call of ClaimJob.
@@ -105,17 +104,32 @@ func (mr *MockJobRepositoryMockRecorder) CountPendingJobs(ctx any) *gomock.Call 
 }
 
 // CreateJob mocks base method.
-func (m *MockJobRepository) CreateJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
+func (m *MockJobRepository) CreateJob(ctx context.Context, input repository.CreateJobInput) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateJob", ctx, id, payload)
+	ret := m.ctrl.Call(m, "CreateJob", ctx, input)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateJob indicates an expected call of CreateJob.
-func (mr *MockJobRepositoryMockRecorder) CreateJob(ctx, id, payload any) *gomock.Call {
+func (mr *MockJobRepositoryMockRecorder) CreateJob(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateJob", reflect.TypeOf((*MockJobRepository)(nil).CreateJob), ctx, id, payload)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateJob", reflect.TypeOf((*MockJobRepository)(nil).CreateJob), ctx, input)
+}
+
+// ExpiredJobImageKeys mocks base method.
+func (m *MockJobRepository) ExpiredJobImageKeys(ctx context.Context, ttl time.Duration) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ExpiredJobImageKeys", ctx, ttl)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ExpiredJobImageKeys indicates an expected call of ExpiredJobImageKeys.
+func (mr *MockJobRepositoryMockRecorder) ExpiredJobImageKeys(ctx, ttl any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExpiredJobImageKeys", reflect.TypeOf((*MockJobRepository)(nil).ExpiredJobImageKeys), ctx, ttl)
 }
 
 // FailJob mocks base method.
@@ -132,19 +146,19 @@ func (mr *MockJobRepositoryMockRecorder) FailJob(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockJobRepository)(nil).FailJob), ctx, id)
 }
 
-// GetJobPayload mocks base method.
-func (m *MockJobRepository) GetJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error) {
+// GetJob mocks base method.
+func (m *MockJobRepository) GetJob(ctx context.Context, id uuid.UUID) (*repository.JobRecord, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetJobPayload", ctx, id)
-	ret0, _ := ret[0].(json.RawMessage)
+	ret := m.ctrl.Call(m, "GetJob", ctx, id)
+	ret0, _ := ret[0].(*repository.JobRecord)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetJobPayload indicates an expected call of GetJobPayload.
-func (mr *MockJobRepositoryMockRecorder) GetJobPayload(ctx, id any) *gomock.Call {
+// GetJob indicates an expected call of GetJob.
+func (mr *MockJobRepositoryMockRecorder) GetJob(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobPayload", reflect.TypeOf((*MockJobRepository)(nil).GetJobPayload), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJob", reflect.TypeOf((*MockJobRepository)(nil).GetJob), ctx, id)
 }
 
 // GetJobState mocks base method.

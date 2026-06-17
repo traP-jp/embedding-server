@@ -107,13 +107,13 @@ type combinedRepo struct {
 	cache *mock_repository.MockCacheRepository
 }
 
-func (c *combinedRepo) GetJobPayload(ctx context.Context, id uuid.UUID) (json.RawMessage, error) {
-	return c.job.GetJobPayload(ctx, id)
+func (c *combinedRepo) GetJob(ctx context.Context, id uuid.UUID) (*repository.JobRecord, error) {
+	return c.job.GetJob(ctx, id)
 }
-func (c *combinedRepo) CreateJob(ctx context.Context, id uuid.UUID, payload json.RawMessage) error {
-	return c.job.CreateJob(ctx, id, payload)
+func (c *combinedRepo) CreateJob(ctx context.Context, input repository.CreateJobInput) error {
+	return c.job.CreateJob(ctx, input)
 }
-func (c *combinedRepo) ClaimJob(ctx context.Context) (uuid.UUID, json.RawMessage, error) {
+func (c *combinedRepo) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
 	return c.job.ClaimJob(ctx)
 }
 func (c *combinedRepo) GetJobState(ctx context.Context, id uuid.UUID) (repository.JobState, error) {
@@ -127,6 +127,9 @@ func (c *combinedRepo) FailJob(ctx context.Context, id uuid.UUID) error {
 }
 func (c *combinedRepo) CountPendingJobs(ctx context.Context) (int, error) {
 	return c.job.CountPendingJobs(ctx)
+}
+func (c *combinedRepo) ExpiredJobImageKeys(ctx context.Context, ttl time.Duration) ([]string, error) {
+	return c.job.ExpiredJobImageKeys(ctx, ttl)
 }
 func (c *combinedRepo) CleanupExpiredJobs(ctx context.Context, ttl time.Duration) (int64, error) {
 	return c.job.CleanupExpiredJobs(ctx, ttl)

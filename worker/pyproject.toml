@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Embedding queue worker (ROCm / PyTorch image at runtime)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "boto3>=1.42.0,<2",
     "httpx>=0.28.0,<1",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
@@ -12,7 +14,6 @@ runtime = [
     "accelerate>=1.0.0",
     "bitsandbytes>=0.46.1",
     "numpy>=1.26.0",
-    "pillow>=10.0.0",
     "qwen-vl-utils>=0.0.14",
     "transformers>=4.57.0,<5",
     "yomitoku>=0.13.0",
@@ -28,6 +29,7 @@ py-modules = [
     "job_runner",
     "main",
     "ocr_engine",
+    "worker_object_store",
     "worker_api",
     "worker_config",
 ]

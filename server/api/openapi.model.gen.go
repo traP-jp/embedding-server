@@ -10,11 +10,14 @@ import (
 // EmbeddingImageFile 埋め込みに用いる画像バイナリ
 type EmbeddingImageFile = openapi_types.File
 
-// EmbeddingImagePath worker が参照するローカルファイルパス
-type EmbeddingImagePath = string
+// EmbeddingImageObject worker が参照する画像オブジェクト
+type EmbeddingImageObject struct {
+	// Key worker がオブジェクトストレージから取得する画像オブジェクトキー
+	Key string `json:"key"`
+}
 
-// EmbeddingImagePaths worker が参照するローカルファイルパスのリスト
-type EmbeddingImagePaths = []EmbeddingImagePath
+// EmbeddingImageObjects worker が参照する画像オブジェクトのリスト
+type EmbeddingImageObjects = []EmbeddingImageObject
 
 // EmbeddingResult defines model for EmbeddingResult.
 type EmbeddingResult struct {
@@ -36,8 +39,8 @@ type JobId = openapi_types.UUID
 
 // WorkerJobPayload worker が処理するジョブ内容
 type WorkerJobPayload struct {
-	// ImagePaths worker が参照するローカルファイルパスのリスト
-	ImagePaths *EmbeddingImagePaths `json:"image_paths,omitempty"`
+	// ImageObjects worker が参照する画像オブジェクトのリスト
+	ImageObjects *EmbeddingImageObjects `json:"image_objects,omitempty"`
 
 	// Text 埋め込みに用いるテキスト
 	Text *EmbeddingText `json:"text,omitempty"`

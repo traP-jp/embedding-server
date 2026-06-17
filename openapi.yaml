@@ -355,16 +355,21 @@ components:
       format: binary
       description: 埋め込みに用いる画像バイナリ
 
-    EmbeddingImagePath:
-      type: string
-      description: worker が参照するローカルファイルパス
+    EmbeddingImageObject:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          description: worker がオブジェクトストレージから取得する画像オブジェクトキー
+      description: worker が参照する画像オブジェクト
 
-    EmbeddingImagePaths:
+    EmbeddingImageObjects:
       type: array
       minItems: 1
       items:
-        $ref: "#/components/schemas/EmbeddingImagePath"
-      description: worker が参照するローカルファイルパスのリスト
+        $ref: "#/components/schemas/EmbeddingImageObject"
+      description: worker が参照する画像オブジェクトのリスト
 
     WorkerJobPayload:
       type: object
@@ -372,5 +377,5 @@ components:
       properties:
         text:
           $ref: "#/components/schemas/EmbeddingText"
-        image_paths:
-          $ref: "#/components/schemas/EmbeddingImagePaths"
+        image_objects:
+          $ref: "#/components/schemas/EmbeddingImageObjects"

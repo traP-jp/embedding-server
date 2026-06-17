@@ -34,24 +34,23 @@ class OcrEngine:
                 log.exception("yomitoku OCR load failed device=%s", self.config.ocr_device)
                 raise
 
-    def read_image_text(self, image_path: str) -> str:
+    def read_image_text(self, image: Any) -> str:
         if self.config.fake_embeddings or not self.config.ocr_enabled or self._ocr is None:
             return ""
 
         torch: Any | None = None
         try:
-            from PIL import Image
             import numpy as np
+            from PIL import Image
 
-            with Image.open(image_path) as img:
-                img = img.convert("RGB")
-                if self.config.ocr_scale > 1:
-                    width, height = img.size
-                    img = img.resize(
-                        (width * self.config.ocr_scale, height * self.config.ocr_scale),
-                        Image.Resampling.BICUBIC,
-                    )
-                arr = np.array(img)
+            img: Any = image.copy().convert("RGB")
+            if self.config.ocr_scale > 1:
+                width, height = img.size
+                img = img.resize(
+                    (width * self.config.ocr_scale, height * self.config.ocr_scale),
+                    Image.Resampling.BICUBIC,
+                )
+            arr = np.array(img)
 
             # GPUメモリ不足対策: OCR推論前にキャッシュをクリア
             if self.config.ocr_device.startswith("cuda"):
@@ -88,7 +87,7 @@ class OcrEngine:
                 ocr_text = ocr_text[: self.config.ocr_max_chars]
             return ocr_text
         except Exception:
-            log.exception("OCR failed image_path=%s; continuing without OCR text", image_path)
+            log.exception("OCR failed; continuing without OCR text")
             return ""
         finally:
             if self.config.ocr_device.startswith("cuda"):

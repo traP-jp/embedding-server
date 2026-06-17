@@ -28,11 +28,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	jobDataDir := os.Getenv("JOB_DATA_DIR")
-	if jobDataDir == "" {
-		jobDataDir = "/data/jobs"
+	jobFile, err := service.NewS3JobFileService(context.Background(), service.S3JobFileConfig{
+		Endpoint:        os.Getenv("S3_ENDPOINT_URL"),
+		Bucket:          os.Getenv("S3_BUCKET"),
+		Region:          os.Getenv("S3_REGION"),
+		AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		Prefix:          os.Getenv("S3_PREFIX"),
+	})
+	if err != nil {
+		slog.Error("failed to initialize job image object storage", slog.Any("error", err))
+		os.Exit(1)
 	}
-	jobFile := service.NewJobFileService(jobDataDir)
 
 	notifier := service.NewLocalJobNotifier()
 
@@ -43,7 +50,7 @@ func main() {
 
 	ctx := context.Background()
 
-	cleanup := service.NewCleanupService(jobFile.DataDir(), repo)
+	cleanup := service.NewCleanupService(repo, jobFile)
 	go cleanup.Run(ctx)
 
 	e := echo.New()

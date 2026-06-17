@@ -2,41 +2,35 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"time"
 
 	"embedding-server/api/repository"
 )
 
 const (
-	imageRetentionPeriod = 6 * time.Hour
-	jobTTL               = 6 * time.Hour
-	cachePruneInterval   = 30 * time.Minute
+	jobTTL             = 6 * time.Hour
+	cachePruneInterval = 30 * time.Minute
 )
 
 type CleanupService struct {
-	jobDir string
-	repo   repository.Repository
+	repo    repository.Repository
+	jobFile *JobFileService
 }
 
-func NewCleanupService(jobDir string, repo repository.Repository) *CleanupService {
-	return &CleanupService{jobDir: jobDir, repo: repo}
+func NewCleanupService(repo repository.Repository, jobFile *JobFileService) *CleanupService {
+	return &CleanupService{repo: repo, jobFile: jobFile}
 }
 
 func (s *CleanupService) Run(ctx context.Context) {
 	jobTicker := time.NewTicker(jobTTL)
 	defer jobTicker.Stop()
 
-	imageTicker := time.NewTicker(imageRetentionPeriod)
-	defer imageTicker.Stop()
-
 	cacheTicker := time.NewTicker(cachePruneInterval)
 	defer cacheTicker.Stop()
 
 	slog.Info("cleanup service started",
-		slog.String("image_retention", imageRetentionPeriod.String()),
 		slog.String("job_ttl", jobTTL.String()),
 		slog.String("cache_prune_interval", cachePruneInterval.String()),
 	)
@@ -51,8 +45,6 @@ func (s *CleanupService) Run(ctx context.Context) {
 			return
 		case <-jobTicker.C:
 			s.cleanupExpiredJobs(ctx)
-		case <-imageTicker.C:
-			s.cleanupImageDirs(ctx)
 		case <-cacheTicker.C:
 			s.pruneCache(ctx)
 		}
@@ -60,6 +52,10 @@ func (s *CleanupService) Run(ctx context.Context) {
 }
 
 func (s *CleanupService) cleanupExpiredJobs(ctx context.Context) {
+	if err := s.cleanupExpiredJobImages(ctx); err != nil {
+		return
+	}
+
 	deleted, err := s.repo.CleanupExpiredJobs(ctx, jobTTL)
 	if err != nil {
 		slog.Error("cleanup expired jobs", slog.Any("error", err))
@@ -70,44 +66,22 @@ func (s *CleanupService) cleanupExpiredJobs(ctx context.Context) {
 	}
 }
 
-func (s *CleanupService) cleanupImageDirs(ctx context.Context) {
-	entries, err := os.ReadDir(s.jobDir)
+func (s *CleanupService) cleanupExpiredJobImages(ctx context.Context) error {
+	keys, err := s.repo.ExpiredJobImageKeys(ctx, jobTTL)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
-		slog.Error("cleanup read dir", slog.Any("error", err))
-		return
+		slog.Error("list expired job image keys", slog.Any("error", err))
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
 	}
 
-	cutoff := time.Now().Add(-imageRetentionPeriod)
-	var cleaned int
-
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			slog.Error("cleanup stat", slog.String("dir", entry.Name()), slog.Any("error", err))
-			continue
-		}
-
-		if info.ModTime().Before(cutoff) {
-			path := filepath.Join(s.jobDir, entry.Name())
-			if err := os.RemoveAll(path); err != nil {
-				slog.Error("cleanup remove", slog.String("dir", entry.Name()), slog.Any("error", err))
-				continue
-			}
-
-			cleaned++
-		}
+	if err := s.jobFile.RemoveJobImages(ctx, keys); err != nil {
+		slog.Error("cleanup expired job images", slog.Int("object_count", len(keys)), slog.Any("error", err))
+		return fmt.Errorf("cleanup expired job images: %w", err)
 	}
-
-	if cleaned > 0 {
-		slog.Info("cleanup image dirs", slog.Int("cleaned", cleaned))
-	}
+	slog.Info("cleanup expired job images", slog.Int("object_count", len(keys)))
+	return nil
 }
 
 func (s *CleanupService) pruneCache(ctx context.Context) {
