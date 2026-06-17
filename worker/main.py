@@ -33,7 +33,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     try:
-        config = Config.from_env()
+        config = Config()
     except ValueError as e:
         log.error("missing worker configuration: %s", e)
         raise SystemExit(1)
