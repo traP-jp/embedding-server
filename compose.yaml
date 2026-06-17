@@ -37,11 +37,6 @@ services:
         BNB_GIT_REF: "${BNB_GIT_REF:-0.49.2}"
         BNB_ROCM_ARCH: "${BNB_ROCM_ARCH:-gfx1030}"
     container_name: embedding-worker
-    environment:
-      XDG_CACHE_HOME: /cache
-      HF_HOME: /cache/huggingface
-      HF_HUB_CACHE: /cache/huggingface/hub
-      TORCH_HOME: /cache/torch
     env_file:
       - .env
     depends_on:
