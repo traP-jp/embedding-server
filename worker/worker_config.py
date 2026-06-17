@@ -61,6 +61,11 @@ class Config:
     ocr_det_threshold: float
     ocr_max_chars: int
     ocr_visualize: bool
+    s3_endpoint_url: str
+    s3_bucket: str
+    s3_region: str
+    s3_access_key_id: str
+    s3_secret_access_key: str
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -90,4 +95,9 @@ class Config:
             ocr_det_threshold=env_float("OCR_DET_THRESHOLD"),#OCRの検出しきい値
             ocr_max_chars=env_int("OCR_MAX_CHARS"),
             ocr_visualize=env_bool("OCR_VISUALIZE"),
+            s3_endpoint_url=os.environ.get("S3_ENDPOINT_URL", "").strip(),
+            s3_bucket=os.environ.get("S3_BUCKET", "").strip(),
+            s3_region=os.environ.get("S3_REGION", "").strip(),
+            s3_access_key_id=os.environ.get("S3_ACCESS_KEY_ID", "").strip(),
+            s3_secret_access_key=os.environ.get("S3_SECRET_ACCESS_KEY", "").strip(),
         )

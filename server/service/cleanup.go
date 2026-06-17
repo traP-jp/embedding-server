@@ -52,11 +52,11 @@ func (s *CleanupService) Run(ctx context.Context) {
 }
 
 func (s *CleanupService) cleanupExpiredJobs(ctx context.Context) {
-	if err := s.(ctx); err != nil {
+	if err := s.cleanupExpiredJobImages(ctx); err != nil {
 		return
 	}
 
-	deleted, err := s.rcleanupExpiredJobImagesepo.CleanupExpiredJobs(ctx, jobTTL)
+	deleted, err := s.repo.CleanupExpiredJobs(ctx, jobTTL)
 	if err != nil {
 		slog.Error("cleanup expired jobs", slog.Any("error", err))
 		return

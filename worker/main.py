@@ -13,6 +13,7 @@ from job_runner import run_job
 from ocr_engine import OcrEngine
 from worker_api import ApiClient
 from worker_config import Config
+from worker_object_store import ObjectStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -39,6 +40,7 @@ def main() -> None:
 
     log.info("worker components init started")
     api = ApiClient(config.api_base_url)
+    object_store = ObjectStore(config)
     ocr = OcrEngine(config)
     embedder = EmbeddingEngine(config)
     log.info("worker components init completed")
@@ -61,7 +63,7 @@ def main() -> None:
                 time.sleep(config.poll_interval_seconds)
                 continue
 
-            run_job(api, embedder, ocr, job)
+            run_job(api, embedder, ocr, object_store, job)
         except json.JSONDecodeError as e:
             log.warning("invalid json from api: %s", e)
             time.sleep(1)

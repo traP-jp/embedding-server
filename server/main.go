@@ -35,7 +35,6 @@ func main() {
 		AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
 		SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
 		Prefix:          os.Getenv("S3_PREFIX"),
-		UsePathStyle:    os.Getenv("S3_FORCE_PATH_STYLE") != "false",
 	})
 	if err != nil {
 		slog.Error("failed to initialize job image object storage", slog.Any("error", err))

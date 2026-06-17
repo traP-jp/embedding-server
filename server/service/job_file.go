@@ -32,7 +32,6 @@ type S3JobFileConfig struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	Prefix          string
-	UsePathStyle    bool
 }
 
 func NewS3JobFileService(ctx context.Context, cfg S3JobFileConfig) (*JobFileService, error) {
@@ -51,7 +50,7 @@ func NewS3JobFileService(ctx context.Context, cfg S3JobFileConfig) (*JobFileServ
 	return &JobFileService{
 		s3: s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
-			o.UsePathStyle = cfg.UsePathStyle
+			o.UsePathStyle = true
 		}),
 		bucket: cfg.Bucket,
 		prefix: strings.Trim(cfg.Prefix, "/"),

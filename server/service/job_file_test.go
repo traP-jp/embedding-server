@@ -41,7 +41,6 @@ func newFakeS3JobFileService(t *testing.T) (*JobFileService, *fakeS3Server) {
 		AccessKeyID:     "test-access-key",
 		SecretAccessKey: "test-secret-key",
 		Prefix:          "jobs",
-		UsePathStyle:    true,
 	})
 	if err != nil {
 		t.Fatalf("new job file service: %v", err)

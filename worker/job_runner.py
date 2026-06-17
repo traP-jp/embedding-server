@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -13,10 +12,11 @@ import httpx
 from embedding_engine import EmbeddingEngine
 from ocr_engine import OcrEngine
 from worker_api import ApiClient
+from worker_object_store import ObjectStore
 
 log = logging.getLogger("worker")
 
-# jobのログを記録するためのクラス
+
 @dataclass
 class JobMetrics:
     job_id: str
@@ -94,7 +94,13 @@ class JobMetrics:
         )
 
 
-def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict[str, Any]) -> None:
+def run_job(
+    api: ApiClient,
+    embedder: EmbeddingEngine,
+    ocr: OcrEngine,
+    object_store: ObjectStore,
+    job: dict[str, Any],
+) -> None:
     job_id = job.get("id")
     payload = job.get("payload")
     if not isinstance(job_id, str):
@@ -106,7 +112,8 @@ def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict
 
     metrics = JobMetrics(job_id=job_id, text_chars=_payload_text_chars(payload))
     try:
-        item = build_embedding_item(payload, ocr, metrics)
+        images = get_images(payload, object_store)
+        item = add_ocr_text(payload, images, ocr, metrics)
 
         with metrics.measure_embedding():
             vector = embedder.embed(item)
@@ -120,8 +127,21 @@ def run_job(api: ApiClient, embedder: EmbeddingEngine, ocr: OcrEngine, job: dict
         fail_safely(api, job_id)
 
 
-def build_embedding_item(
+def get_images(
     payload: dict[str, Any],
+    object_store: ObjectStore,
+) -> list[Any]:
+    image_objects = payload.get("image_objects") or []
+    if not image_objects:
+        return []
+    if not isinstance(image_objects, list):
+        raise TypeError("payload.image_objects must be a list")
+
+    return object_store.read_images(image_objects)
+
+def add_ocr_text(
+    payload: dict[str, Any],
+    images: list[Any],
     ocr: OcrEngine,
     metrics: JobMetrics,
 ) -> dict[str, Any]:
@@ -132,34 +152,23 @@ def build_embedding_item(
 
     base_text = (text or "").strip()
 
-    image_paths = payload.get("image_paths") or []
-    if not isinstance(image_paths, list):
-        raise TypeError("payload.image_paths must be a list")
+    if not base_text and not images:
+        raise ValueError("payload requires text or image_objects")
 
-    if not base_text and not image_paths:
-        raise ValueError("payload requires text or image_paths")
-
-    if not image_paths:
+    if not images:
         return {"text": base_text}
 
-    validated_image_paths: list[str] = []
     text_parts = [base_text] if base_text else []
-    for idx, image_path in enumerate(image_paths, start=1):
-        if not isinstance(image_path, str) or not image_path:
-            raise TypeError("image path must be a non-empty string")
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"image not found: {image_path}")
-        validated_image_paths.append(image_path)
-
+    for idx, image in enumerate(images):
         ocr_started = metrics.start_ocr()
-        ocr_text = ocr.read_image_text(image_path)
+        ocr_text = ocr.read_image_text(image)
         metrics.finish_ocr(idx, ocr_text, ocr_started)
         if ocr_text:
-            label = "[OCR]" if len(image_paths) == 1 else f"[OCR image {idx}]"
+            label = "[OCR]" if len(images) == 1 else f"[OCR image {idx}]"
             text_parts.append(f"{label}\n{ocr_text}")
 
-    item: dict[str, Any] = {"image": validated_image_paths}
-    metrics.set_images(len(validated_image_paths))
+    item: dict[str, Any] = {"image": images}
+    metrics.set_images(len(images))
     if text_parts:
         item["text"] = text_parts
 
