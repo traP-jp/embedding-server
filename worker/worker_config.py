@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,8 +12,10 @@ class Config(BaseSettings):
         frozen=True,
     )
 
-    api_host: str = Field(validation_alias="API_HOST")
-    api_port: str = Field(validation_alias="API_PORT")
+    api_mode: str = Field(validation_alias="WORKER_API_MODE")
+    api_base_url_override: str = Field(default="", validation_alias="API_BASE_URL")
+    api_host: str = Field(default="", validation_alias="API_HOST")
+    api_port: str = Field(default="", validation_alias="API_PORT")
     poll_interval_seconds: float = Field(validation_alias="POLL_INTERVAL_SECONDS")
     model_device_map: str = Field(validation_alias="MODEL_DEVICE_MAP")
     model_max_memory_cuda: str = Field(validation_alias="MODEL_MAX_MEMORY_CUDA")
@@ -28,7 +30,7 @@ class Config(BaseSettings):
     # 開発環境
     fake_embeddings: bool = Field(validation_alias="EMBEDDING_WORKER_FAKE")
     fake_embedding_dim: int = Field(validation_alias="FAKE_EMBEDDING_DIM")
-    # ocr
+    # OCR設定
     ocr_enabled: bool = Field(validation_alias="OCR_ENABLED")
     ocr_device: str = Field(validation_alias="OCR_DEVICE")
     ocr_scale: int = Field(validation_alias="OCR_SCALE")
@@ -36,13 +38,29 @@ class Config(BaseSettings):
     ocr_det_threshold: float = Field(validation_alias="OCR_DET_THRESHOLD")
     ocr_max_chars: int = Field(validation_alias="OCR_MAX_CHARS")
     ocr_visualize: bool = Field(validation_alias="OCR_VISUALIZE")
-    # s3
+    # S3設定
     s3_endpoint_url: str = Field(validation_alias="S3_ENDPOINT_URL")
     s3_bucket: str = Field(validation_alias="S3_BUCKET")
     s3_region: str = Field(validation_alias="S3_REGION")
     s3_access_key_id: str = Field(validation_alias="S3_ACCESS_KEY_ID")
     s3_secret_access_key: str = Field(validation_alias="S3_SECRET_ACCESS_KEY")
 
+    @model_validator(mode="after")
+    def validate_api_config(self) -> "Config":
+        if self.api_mode not in {"host", "url"}:
+            raise ValueError("WORKER_API_MODE must be one of host, url")
+        if self.api_mode == "url":
+            if self.api_base_url_override:
+                return self
+            raise ValueError("set API_BASE_URL when WORKER_API_MODE=url")
+        if self.api_mode == "host":
+            if self.api_host and self.api_port:
+                return self
+            raise ValueError("set both API_HOST and API_PORT when WORKER_API_MODE=host")
+        raise AssertionError("unreachable")
+
     @property
     def api_base_url(self) -> str:
+        if self.api_mode == "url":
+            return self.api_base_url_override.rstrip("/")
         return f"http://{self.api_host}:{self.api_port}"

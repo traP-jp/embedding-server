@@ -39,6 +39,8 @@ services:
     container_name: embedding-worker
     env_file:
       - .env
+    environment:
+      WORKER_API_MODE: host
     depends_on:
       api:
         condition: service_started
