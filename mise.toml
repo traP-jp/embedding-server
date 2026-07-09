@@ -38,16 +38,54 @@ run = "docker compose -f development/compose.yaml down"
 
 [tasks.modal-secret]
 description = "deploy/modal/.env を Modal Secret に登録する"
-run = "uv run --project worker --python \"$(mise which python)\" --extra deploy modal secret create --force embedding-worker --from-dotenv deploy/modal/.env"
+run = """
+uv run \
+    --project worker \
+    --extra deploy \
+    modal secret create \
+    --force embedding-worker \
+    --from-dotenv deploy/modal/.env
+"""
 
 [tasks.modal-run]
 description = "Modal worker を手動で1回実行する"
-run = "bash -lc 'set -a; source deploy/modal/.env; set +a; unset MODAL_ENABLE_SCHEDULE; uv run --project worker --python \"$(mise which python)\" --extra deploy modal run worker/modal_app.py --max-jobs 30'"
+run = """
+bash -lc '
+set -a
+source deploy/modal/.env
+set +a
+unset MODAL_ENABLE_SCHEDULE
+uv run \
+    --project worker \
+    --extra deploy \
+    modal run worker/modal_app.py
+'
+"""
 
 [tasks.modal-deploy]
 description = "Modal worker の定期ポーリングをデプロイする"
-run = "bash -lc 'set -a; source deploy/modal/.env; set +a; MODAL_ENABLE_SCHEDULE=1 uv run --project worker --python \"$(mise which python)\" --extra deploy modal deploy worker/modal_app.py'"
+run = """
+bash -lc '
+set -a
+source deploy/modal/.env
+set +a
+MODAL_ENABLE_SCHEDULE=1 uv run \
+    --project worker \
+    --extra deploy \
+    modal deploy worker/modal_app.py
+'
+"""
 
 [tasks.benchmark-text]
 description = "テキストのみの Embedding API レイテンシを計測する"
-run = "uv run --project worker --with requests python benchmark/benchmark_query_uncached.py --api-base-url ${EMBEDDING_API_BASE_URL:-http://localhost:8080} --query-count ${QUERY_COUNT:-5} --timeout ${EMBEDDING_REQUEST_TIMEOUT_SEC:-0} --output ${OUTPUT:-benchmark/benchmark-text-results.jsonl} --html-report ${HTML_REPORT:-benchmark/benchmark-report-1024.html}"
+run = """
+uv run \
+    --project worker \
+    --with requests \
+    python benchmark/benchmark_query_uncached.py \
+    --api-base-url ${EMBEDDING_API_BASE_URL:-http://localhost:8080} \
+    --query-count ${QUERY_COUNT:-5} \
+    --timeout ${EMBEDDING_REQUEST_TIMEOUT_SEC:-0} \
+    --output ${OUTPUT:-benchmark/benchmark-text-results.jsonl} \
+    --html-report ${HTML_REPORT:-benchmark/benchmark-report-1024.html}
+"""

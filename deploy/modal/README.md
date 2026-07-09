@@ -65,6 +65,7 @@ Modal 用のデプロイ設定は、意図的に `compose.yaml` から分離し�
 - `MODAL_GPU=A10` はデプロイ時の Modal GPU 種別を指定する。
 - `MODAL_MAX_CONTAINERS=1` は手動の `process_queue` 実行時に同時 worker
   コンテナ数を制限する。
+- `MODAL_MAX_JOBS_PER_RUN=30` は 1 回の Modal 起動で処理する最大 job 数を指定する。
 - `MODAL_POLL_MINUTES=1` は定期ポーリング間隔を指定する。
 - `MODAL_WORKER_RUN_SECONDS=300` は 1 回の Modal 起動で待機・処理する最大秒数を指定する。
 - `MODAL_IDLE_POLL_SECONDS=2` は job が無いときの claim 再試行間隔を指定する。
