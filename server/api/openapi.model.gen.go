@@ -4,10 +4,16 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// EmbeddingImageFile 埋め込みに用いる画像バイナリ
+// EmbeddingImageFile 埋め込みに用いる画像バイナリ。
+// 対応形式: image/png, image/jpeg, image/webp。
+// 1ファイルあたり最大 20 MiB（20971520 bytes）。
 type EmbeddingImageFile = openapi_types.File
 
 // EmbeddingImageObject worker が参照する画像オブジェクト
@@ -25,7 +31,8 @@ type EmbeddingResult struct {
 	Vector []float32 `json:"vector"`
 }
 
-// EmbeddingText 埋め込みに用いるテキスト
+// EmbeddingText 埋め込みに用いるテキスト。
+// 1〜8192 文字。空文字は不可。
 type EmbeddingText = string
 
 // ErrorResponse defines model for ErrorResponse.
@@ -42,7 +49,8 @@ type WorkerJobPayload struct {
 	// ImageObjects worker が参照する画像オブジェクトのリスト
 	ImageObjects *EmbeddingImageObjects `json:"image_objects,omitempty"`
 
-	// Text 埋め込みに用いるテキスト
+	// Text 埋め込みに用いるテキスト。
+	// 1〜8192 文字。空文字は不可。
 	Text *EmbeddingText `json:"text,omitempty"`
 }
 
@@ -60,13 +68,22 @@ type PostEmbeddingsImagesMultipartBody struct {
 type PostEmbeddingsMultimodalMultipartBody struct {
 	Images *[]EmbeddingImageFile `json:"images,omitempty"`
 
-	// Text 埋め込みに用いるテキスト
-	Text *EmbeddingText `json:"text,omitempty"`
+	// Text 埋め込みに用いるテキスト。
+	// 1〜8192 文字。空文字は不可。
+	Text  *EmbeddingText `json:"text,omitempty"`
+	union json.RawMessage
 }
+
+// PostEmbeddingsMultimodalMultipartBody0 defines parameters for PostEmbeddingsMultimodal.
+type PostEmbeddingsMultimodalMultipartBody0 = interface{}
+
+// PostEmbeddingsMultimodalMultipartBody1 defines parameters for PostEmbeddingsMultimodal.
+type PostEmbeddingsMultimodalMultipartBody1 = interface{}
 
 // PostEmbeddingsTextJSONBody defines parameters for PostEmbeddingsText.
 type PostEmbeddingsTextJSONBody struct {
-	// Text 埋め込みに用いるテキスト
+	// Text 埋め込みに用いるテキスト。
+	// 1〜8192 文字。空文字は不可。
 	Text EmbeddingText `json:"text"`
 }
 
@@ -81,3 +98,113 @@ type PostEmbeddingsMultimodalMultipartRequestBody PostEmbeddingsMultimodalMultip
 
 // PostEmbeddingsTextJSONRequestBody defines body for PostEmbeddingsText for application/json ContentType.
 type PostEmbeddingsTextJSONRequestBody PostEmbeddingsTextJSONBody
+
+// AsPostEmbeddingsMultimodalMultipartBody0 returns the union data inside the PostEmbeddingsMultimodalMultipartBody as a PostEmbeddingsMultimodalMultipartBody0
+func (t PostEmbeddingsMultimodalMultipartBody) AsPostEmbeddingsMultimodalMultipartBody0() (PostEmbeddingsMultimodalMultipartBody0, error) {
+	var body PostEmbeddingsMultimodalMultipartBody0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPostEmbeddingsMultimodalMultipartBody0 overwrites any union data inside the PostEmbeddingsMultimodalMultipartBody as the provided PostEmbeddingsMultimodalMultipartBody0
+func (t *PostEmbeddingsMultimodalMultipartBody) FromPostEmbeddingsMultimodalMultipartBody0(v PostEmbeddingsMultimodalMultipartBody0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePostEmbeddingsMultimodalMultipartBody0 performs a merge with any union data inside the PostEmbeddingsMultimodalMultipartBody, using the provided PostEmbeddingsMultimodalMultipartBody0
+func (t *PostEmbeddingsMultimodalMultipartBody) MergePostEmbeddingsMultimodalMultipartBody0(v PostEmbeddingsMultimodalMultipartBody0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsPostEmbeddingsMultimodalMultipartBody1 returns the union data inside the PostEmbeddingsMultimodalMultipartBody as a PostEmbeddingsMultimodalMultipartBody1
+func (t PostEmbeddingsMultimodalMultipartBody) AsPostEmbeddingsMultimodalMultipartBody1() (PostEmbeddingsMultimodalMultipartBody1, error) {
+	var body PostEmbeddingsMultimodalMultipartBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPostEmbeddingsMultimodalMultipartBody1 overwrites any union data inside the PostEmbeddingsMultimodalMultipartBody as the provided PostEmbeddingsMultimodalMultipartBody1
+func (t *PostEmbeddingsMultimodalMultipartBody) FromPostEmbeddingsMultimodalMultipartBody1(v PostEmbeddingsMultimodalMultipartBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePostEmbeddingsMultimodalMultipartBody1 performs a merge with any union data inside the PostEmbeddingsMultimodalMultipartBody, using the provided PostEmbeddingsMultimodalMultipartBody1
+func (t *PostEmbeddingsMultimodalMultipartBody) MergePostEmbeddingsMultimodalMultipartBody1(v PostEmbeddingsMultimodalMultipartBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t PostEmbeddingsMultimodalMultipartBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if t.Images != nil {
+		object["images"], err = json.Marshal(t.Images)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'images': %w", err)
+		}
+	}
+
+	if t.Text != nil {
+		object["text"], err = json.Marshal(t.Text)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'text': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *PostEmbeddingsMultimodalMultipartBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["images"]; found {
+		err = json.Unmarshal(raw, &t.Images)
+		if err != nil {
+			return fmt.Errorf("error reading 'images': %w", err)
+		}
+	}
+
+	if raw, found := object["text"]; found {
+		err = json.Unmarshal(raw, &t.Text)
+		if err != nil {
+			return fmt.Errorf("error reading 'text': %w", err)
+		}
+	}
+
+	return err
+}

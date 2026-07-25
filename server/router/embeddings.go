@@ -51,7 +51,7 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 		Multipart: req.Body,
 	})
 	if errors.Is(err, service.ErrEmbeddingImageTooLarge) {
-		return api.PostEmbeddingsImages413JSONResponse{Message: "image too large"}, nil
+		return api.PostEmbeddingsImages400JSONResponse{Message: "image too large"}, nil
 	}
 	if errors.Is(err, service.ErrEmbeddingUnsupportedImageType) {
 		return api.PostEmbeddingsImages400JSONResponse{Message: "unsupported image type"}, nil
@@ -93,7 +93,7 @@ func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmb
 		Multipart: req.Body,
 	})
 	if errors.Is(err, service.ErrEmbeddingImageTooLarge) {
-		return api.PostEmbeddingsMultimodal413JSONResponse{Message: "image too large"}, nil
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "image too large"}, nil
 	}
 	if errors.Is(err, service.ErrEmbeddingUnsupportedImageType) {
 		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "unsupported image type"}, nil

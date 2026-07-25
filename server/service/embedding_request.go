@@ -109,11 +109,10 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 
 			switch http.DetectContentType(raw) {
 			case "image/png", "image/jpeg", "image/webp":
+				input.Images = append(input.Images, raw)
 			default:
 				partErr = ErrEmbeddingUnsupportedImageType
-				break
 			}
-			input.Images = append(input.Images, raw)
 		default:
 			partErr = errors.New("invalid multipart")
 		}

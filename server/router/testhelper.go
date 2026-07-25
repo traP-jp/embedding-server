@@ -47,6 +47,9 @@ func setupTest(t *testing.T) *testSetup {
 	repo := &testCombinedRepo{job: jobMock, cache: cacheMock}
 
 	e := echo.New()
+	if err := UseOpenAPIRequestValidator(e); err != nil {
+		t.Fatalf("configure openapi request validator: %v", err)
+	}
 	notifier := service.NewLocalJobNotifier()
 	jobFile, fakeS3 := newFakeS3JobFileService(t)
 	embeddingSvc := service.NewEmbeddingService(repo, notifier, jobFile)
@@ -223,6 +226,19 @@ func assertErrorMessage(t *testing.T, rec *httptest.ResponseRecorder, want strin
 	}
 	if msg != want {
 		t.Errorf("message: got %q, want %q", msg, want)
+	}
+}
+
+// assertErrorMessageContainsは、エラーメッセージに部分文字列が含まれることを確認する。
+func assertErrorMessageContains(t *testing.T, rec *httptest.ResponseRecorder, substr string) {
+	t.Helper()
+	body := assertJSONBody(t, rec)
+	msg, ok := body["message"].(string)
+	if !ok {
+		t.Fatalf("expected message field in response, got: %v", body)
+	}
+	if !strings.Contains(msg, substr) {
+		t.Errorf("message: got %q, want substring %q", msg, substr)
 	}
 }
 

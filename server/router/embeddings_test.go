@@ -69,7 +69,7 @@ func TestPostEmbeddingsText_EmptyText(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/text", "application/json", strings.NewReader(body))
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "text required")
+	assertErrorMessageContains(t, rec, "minimum string length is 1")
 }
 
 func TestPostEmbeddingsText_TextTooLong(t *testing.T) {
@@ -80,7 +80,7 @@ func TestPostEmbeddingsText_TextTooLong(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/text", "application/json", strings.NewReader(body))
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "text exceeds 8192 character limit")
+	assertErrorMessageContains(t, rec, "maximum string length is 8192")
 }
 
 func TestPostEmbeddingsText_JobsFull(t *testing.T) {
@@ -193,7 +193,7 @@ func TestPostEmbeddingsImages_NoImages(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "images required")
+	assertErrorMessageContains(t, rec, `property "images" is missing`)
 }
 
 func TestPostEmbeddingsImages_UnsupportedType(t *testing.T) {
@@ -224,11 +224,7 @@ func TestPostEmbeddingsImages_TooManyImages(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", writer.FormDataContentType(), &buf)
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	body := assertJSONBody(t, rec)
-	msg := body["message"].(string)
-	if msg != "too many images" {
-		t.Errorf("unexpected message: %q", msg)
-	}
+	assertErrorMessageContains(t, rec, "maximum number of items is 4")
 }
 
 func TestPostEmbeddingsImages_TextNotAllowed(t *testing.T) {
@@ -244,7 +240,7 @@ func TestPostEmbeddingsImages_TextNotAllowed(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "text is not allowed")
+	assertErrorMessageContains(t, rec, "part text: undefined")
 }
 
 func TestPostEmbeddingsImages_ImageTooLarge(t *testing.T) {
@@ -262,8 +258,8 @@ func TestPostEmbeddingsImages_ImageTooLarge(t *testing.T) {
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
 
-	assertStatus(t, rec, http.StatusRequestEntityTooLarge)
-	assertErrorMessage(t, rec, "image too large")
+	assertStatus(t, rec, http.StatusBadRequest)
+	assertErrorMessageContains(t, rec, "maximum string length is 20971520")
 }
 
 func TestPostEmbeddingsImages_JobsFull(t *testing.T) {
@@ -434,7 +430,7 @@ func TestPostEmbeddingsMultimodal_BothEmpty(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "text or images required")
+	assertErrorMessageContains(t, rec, `doesn't match any schema from "anyOf"`)
 }
 
 func TestPostEmbeddingsMultimodal_TextTooLong(t *testing.T) {
@@ -448,7 +444,7 @@ func TestPostEmbeddingsMultimodal_TextTooLong(t *testing.T) {
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertErrorMessage(t, rec, "text exceeds 8192 character limit")
+	assertErrorMessageContains(t, rec, "maximum string length is 8192")
 }
 
 func TestPostEmbeddingsMultimodal_JobsFull(t *testing.T) {

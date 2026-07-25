@@ -87,6 +87,10 @@ func main() {
 			return nil
 		},
 	}))
+	if err := router.UseOpenAPIRequestValidator(e); err != nil {
+		slog.Error("failed to configure openapi request validator", slog.Any("error", err))
+		os.Exit(1)
+	}
 	api.RegisterHandlers(e, strictHandlers)
 
 	slog.Info("listening", slog.String("port", cfg.APIPort))

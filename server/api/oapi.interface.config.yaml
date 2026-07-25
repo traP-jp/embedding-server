@@ -3,3 +3,4 @@ output: api/openapi.interface.gen.go
 generate:
   echo5-server: true
   strict-server: true
+  embedded-spec: true
