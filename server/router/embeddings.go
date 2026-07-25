@@ -65,6 +65,12 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 	if errors.Is(err, service.ErrEmbeddingInputRequired) {
 		return api.PostEmbeddingsImages400JSONResponse{Message: "images required"}, nil
 	}
+	if errors.Is(err, service.ErrEmbeddingInvalidMultipart) {
+		return api.PostEmbeddingsImages400JSONResponse{Message: "invalid multipart"}, nil
+	}
+	if errors.Is(err, service.ErrEmbeddingCannotReadUpload) {
+		return api.PostEmbeddingsImages400JSONResponse{Message: "cannot read upload"}, nil
+	}
 	if err != nil {
 		return api.PostEmbeddingsImages400JSONResponse{Message: "invalid request"}, nil
 	}
@@ -106,6 +112,12 @@ func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmb
 	}
 	if errors.Is(err, service.ErrEmbeddingInputRequired) {
 		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "text or images required"}, nil
+	}
+	if errors.Is(err, service.ErrEmbeddingInvalidMultipart) {
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "invalid multipart"}, nil
+	}
+	if errors.Is(err, service.ErrEmbeddingCannotReadUpload) {
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "cannot read upload"}, nil
 	}
 	if err != nil {
 		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "invalid request"}, nil

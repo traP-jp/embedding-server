@@ -24,6 +24,8 @@ var (
 	ErrEmbeddingTooManyImages        = errors.New("too many images")
 	ErrEmbeddingTextTooLong          = errors.New("text too long")
 	ErrEmbeddingTextNotAllowed       = errors.New("text not allowed")
+	ErrEmbeddingInvalidMultipart     = errors.New("invalid multipart")
+	ErrEmbeddingCannotReadUpload     = errors.New("cannot read upload")
 )
 
 // EmbeddingInput は埋め込みリクエストの入力を表す。
@@ -63,7 +65,7 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 	}
 
 	if req.Multipart == nil {
-		return EmbeddingInput{}, errors.New("invalid multipart")
+		return EmbeddingInput{}, ErrEmbeddingInvalidMultipart
 	}
 
 	input := EmbeddingInput{}
@@ -74,7 +76,7 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 			break
 		}
 		if err != nil {
-			return EmbeddingInput{}, errors.New("invalid multipart")
+			return EmbeddingInput{}, ErrEmbeddingInvalidMultipart
 		}
 
 		var partErr error
@@ -98,7 +100,7 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 			}
 			raw, err := io.ReadAll(io.LimitReader(part, maxImageUploadBytes+1))
 			if err != nil {
-				partErr = errors.New("cannot read upload")
+				partErr = ErrEmbeddingCannotReadUpload
 				break
 			}
 			// +1まで読み込んでいるので、上限を超えているかどうかはlen(raw)で判断できる。
@@ -114,7 +116,7 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 				partErr = ErrEmbeddingUnsupportedImageType
 			}
 		default:
-			partErr = errors.New("invalid multipart")
+			partErr = ErrEmbeddingInvalidMultipart
 		}
 		part.Close()
 		if partErr != nil {
