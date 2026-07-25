@@ -181,16 +181,18 @@ def process_queue(max_jobs: int = DEFAULT_MAX_JOBS_PER_RUN) -> int:
 def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: float) -> int:
     started = time.perf_counter()
     import httpx
-    from job_runner import run_job
+    from job_runner import claim_jobs, run_jobs
 
     log = logging.getLogger("worker")
+    config = _load_config()
     api = _load_api()
+    batch_size = config.embedding_batch_size
 
     deadline = time.monotonic() + run_seconds
     completed = 0
     while completed < max_jobs and time.monotonic() < deadline:
         try:
-            job = api.claim()
+            jobs = claim_jobs(api, min(batch_size, max_jobs - completed))
         except httpx.HTTPStatusError as e:
             log.error("claim http=%s body=%s", e.response.status_code, e.response.content[:500])
             break
@@ -198,7 +200,7 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
             log.error("claim request error=%s", e)
             break
 
-        if job is None:
+        if not jobs:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -206,22 +208,30 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
             continue
 
         if completed == 0:
-            log.info("modal first job claimed elapsed_sec=%.3f", time.perf_counter() - started)
+            log.info(
+                "modal first batch claimed size=%s elapsed_sec=%.3f",
+                len(jobs),
+                time.perf_counter() - started,
+            )
         embedder, ocr, object_store = _load_job_components()
         if completed == 0:
-            log.info("modal first job ready elapsed_sec=%.3f", time.perf_counter() - started)
-        run_job(api, embedder, ocr, object_store, job)
-        completed += 1
+            log.info(
+                "modal first batch ready size=%s batch_size=%s elapsed_sec=%.3f",
+                len(jobs),
+                batch_size,
+                time.perf_counter() - started,
+            )
+        completed += run_jobs(api, embedder, ocr, object_store, jobs)
 
     log.info(
-        "modal queue pass completed jobs=%s max_jobs=%s run_seconds=%s elapsed_sec=%.3f",
+        "modal queue pass completed jobs=%s max_jobs=%s batch_size=%s run_seconds=%s elapsed_sec=%.3f",
         completed,
         max_jobs,
+        batch_size,
         run_seconds,
         time.perf_counter() - started,
     )
     return completed
-
 
 if os.environ.get("MODAL_ENABLE_SCHEDULE") == "1":
 

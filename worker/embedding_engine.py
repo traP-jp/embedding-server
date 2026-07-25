@@ -28,11 +28,48 @@ class EmbeddingEngine:
         self._load_model()
 
     def embed(self, item: dict[str, Any]) -> list[float]:
-        if not item:
+        return self.embed_many([item])[0]
+
+    def embed_many(self, items: list[dict[str, Any]]) -> list[list[float]]:
+        if not items:
             raise ValueError("embedding input required")
+        for item in items:
+            if not item:
+                raise ValueError("embedding input required")
         if self.config.fake_embeddings:
-            return self._fake_embedding(item)
-        return self._embed_with_model(item)
+            return [self._fake_embedding(item) for item in items]
+
+        assert self.embedder is not None
+        assert self.torch is not None
+
+        started = time.perf_counter()
+        log.debug(
+            "embedding inference started batch_size=%s text_parts=%s image_count=%s",
+            len(items),
+            sum(_count_text_parts(item) for item in items),
+            sum(_count_images(item) for item in items),
+        )
+        with self.torch.no_grad():
+            embeddings = self.embedder.process(items)
+
+        step_started = time.perf_counter()
+        vectors = embeddings.detach().to("cpu").float()
+        log.debug("embedding inference step=copy_to_cpu elapsed_sec=%.3f", time.perf_counter() - step_started)
+        if len(vectors) != len(items):
+            raise ValueError(f"embedding batch size mismatch: got {len(vectors)}, want {len(items)}")
+
+        step_started = time.perf_counter()
+        gc.collect()
+        if self.torch.cuda.is_available():
+            self.torch.cuda.empty_cache()
+        log.debug("embedding inference step=cleanup elapsed_sec=%.3f", time.perf_counter() - step_started)
+        log.debug(
+            "embedding inference completed batch_size=%s dim=%s elapsed_sec=%.3f",
+            len(vectors),
+            len(vectors[0]),
+            time.perf_counter() - started,
+        )
+        return [vector.tolist() for vector in vectors]
 
     def _load_model(self) -> None:
         started = time.perf_counter()
@@ -152,37 +189,6 @@ class EmbeddingEngine:
                 return BitsAndBytesConfig(load_in_8bit=True)
             case _:
                 raise ValueError(f"unsupported QUANTIZATION: {self.config.quantization}")
-
-    def _embed_with_model(self, item: dict[str, Any]) -> list[float]:
-        assert self.embedder is not None
-        assert self.torch is not None
-
-        started = time.perf_counter()
-        log.debug(
-            "embedding inference started text_parts=%s image_count=%s",
-            _count_text_parts(item),
-            _count_images(item),
-        )
-        with self.torch.no_grad():
-            embeddings = self.embedder.process([item])
-
-        step_started = time.perf_counter()
-        vector = embeddings.detach().to("cpu").float()
-        log.debug("embedding inference step=copy_to_cpu elapsed_sec=%.3f", time.perf_counter() - step_started)
-        if len(vector) != 1:  # バッチサイズは1だから1のはず
-            raise ValueError(f"embedding job must produce exactly one vector, got {len(vector)}")
-
-        step_started = time.perf_counter()
-        gc.collect()
-        if self.torch.cuda.is_available():
-            self.torch.cuda.empty_cache()
-        log.debug("embedding inference step=cleanup elapsed_sec=%.3f", time.perf_counter() - step_started)
-        log.debug(
-            "embedding inference completed dim=%s elapsed_sec=%.3f",
-            len(vector[0]),
-            time.perf_counter() - started,
-        )
-        return vector[0].tolist()
 
     def _fake_embedding(self, item: dict[str, Any]) -> list[float]:
         dim = self.config.fake_embedding_dim

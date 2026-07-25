@@ -73,3 +73,5 @@ Modal 用のデプロイ設定は、意図的に `compose.yaml` から分離し�
 - `OCR_ENABLED`、`MODEL_MAX_MEMORY_CUDA`、`QUANTIZATION` などの worker 設定は、
   `deploy/modal/.env` 側で管理する。Modal で画像上限を上げる場合は `deploy/modal/.env` の
   `EMBEDDING_MAX_PIXELS` を大きめにする。
+- `EMBEDDING_BATCH_SIZE` はモデル推論のバッチサイズ（未設定時は 1）。Modal の画像処理では
+  4〜8 を目安に Secret へ入れる。部室のテキスト向け worker は 1 のままでよい。

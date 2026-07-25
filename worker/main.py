@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from embedding_engine import EmbeddingEngine
-from job_runner import run_job
+from job_runner import claim_jobs, run_jobs
 from ocr_engine import OcrEngine
 from worker_api import ApiClient
 from worker_config import Config
@@ -24,7 +24,7 @@ _stop = False
 
 def _handle_signal(signum: int, _frame: Any) -> None:
     global _stop
-    log.info("signal %s, draining current job", signum)
+    log.info("signal %s, draining current batch", signum)
     _stop = True
 
 
@@ -43,13 +43,15 @@ def main() -> None:
     object_store = ObjectStore(config)
     ocr = OcrEngine(config)
     embedder = EmbeddingEngine(config)
-    log.info("worker components init completed")
+    log.info(
+        "worker components init completed embedding_batch_size=%s",
+        config.embedding_batch_size,
+    )
 
     while not _stop:
         try:
             try:
-                # jobを取得してくる。なければNoneが返る。
-                job = api.claim()
+                jobs = claim_jobs(api, config.embedding_batch_size)
             except httpx.HTTPStatusError as e:
                 log.error("claim http=%s body=%s", e.response.status_code, e.response.content[:500])
                 time.sleep(2)
@@ -59,11 +61,11 @@ def main() -> None:
                 time.sleep(2)
                 continue
 
-            if job is None:
+            if not jobs:
                 time.sleep(config.poll_interval_seconds)
                 continue
 
-            run_job(api, embedder, ocr, object_store, job)
+            run_jobs(api, embedder, ocr, object_store, jobs)
         except json.JSONDecodeError as e:
             log.warning("invalid json from api: %s", e)
             time.sleep(1)

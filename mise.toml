@@ -76,6 +76,24 @@ MODAL_ENABLE_SCHEDULE=1 uv run \
 '
 """
 
+[tasks.fetch-traq-samples]
+description = "traQ messageId からベンチ用画像を fixtures に取得する"
+run = """
+uv run \
+    --with requests \
+    python benchmark/fetch_traq_samples.py
+"""
+
+[tasks.modal-cost-bench]
+description = "Modal で fixtures 画像の起動込みコスト・時間を測る (A10/T4)"
+dir = "."
+run = """
+uv run \
+    --project worker \
+    --extra deploy \
+    modal run worker/modal_bench_app.py --gpus ${BENCH_GPUS:-A10,T4}
+"""
+
 [tasks.benchmark-text]
 description = "テキストのみの Embedding API レイテンシを計測する"
 run = """

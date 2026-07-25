@@ -18,3 +18,8 @@ opencode.json
 AGENT.md
 AGENTS.md
 .ocx
+
+# traQ から取得したベンチ用サンプル（再取得可能）
+benchmark/fixtures/**
+!benchmark/fixtures/.gitkeep
+benchmark/modal-cost-bench-results.json

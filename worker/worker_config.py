@@ -21,6 +21,7 @@ class Config(BaseSettings):
     model_max_memory_cuda: str = Field(validation_alias="MODEL_MAX_MEMORY_CUDA")
     model_max_memory_cpu: str = Field(validation_alias="MODEL_MAX_MEMORY_CPU")
     embedding_max_pixels: int = Field(validation_alias="EMBEDDING_MAX_PIXELS")
+    embedding_batch_size: int = Field(default=1, validation_alias="EMBEDDING_BATCH_SIZE", ge=1)
     torch_dtype: str = Field(validation_alias="TORCH_DTYPE")
     quantization: str = Field(validation_alias="QUANTIZATION")
     bnb_4bit_quant_type: str = Field(validation_alias="BNB_4BIT_QUANT_TYPE")
