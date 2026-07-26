@@ -12,6 +12,7 @@ class Config(BaseSettings):
         frozen=True,
     )
 
+    api_key: str = Field(default="", validation_alias="API_KEY")
     api_mode: str = Field(validation_alias="WORKER_API_MODE")
     api_base_url_override: str = Field(default="", validation_alias="API_BASE_URL")
     api_host: str = Field(default="", validation_alias="API_HOST")

@@ -10,8 +10,9 @@ log = logging.getLogger("worker")
 
 
 class ApiClient:
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, api_key: str = "") -> None:
         self.base_url = base_url
+        self.api_key = api_key
 
     # jobの取得
     def claim(self, kinds: list[str] | None = None) -> dict[str, Any] | None:
@@ -41,6 +42,8 @@ class ApiClient:
         request_kwargs: dict[str, Any] = {}
         if body is not None:
             request_kwargs["json"] = body
+        if self.api_key:
+            request_kwargs["headers"] = {"Authorization": f"Bearer {self.api_key}"}
 
         started = time.perf_counter()
         try:

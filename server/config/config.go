@@ -8,20 +8,20 @@ import (
 )
 
 type Config struct {
-	AppEnv   string   `envconfig:"APP_ENV" required:"true"`
-	APIPort  string   `envconfig:"API_PORT" required:"true"`
+	AppEnv  string `envconfig:"APP_ENV" required:"true"`
+	APIPort string `envconfig:"API_PORT" required:"true"`
+	// APIKey は公開 API・/internal・webhook 送信・Modal 起動で共有する秘密。
+	APIKey   string   `envconfig:"API_KEY" required:"true"`
 	Database DBConfig `envconfig:"POSTGRES"`
 	S3       S3Config `envconfig:"S3"`
 	Modal    ModalConfig
 }
 
 type ModalConfig struct {
-	// Enable が false のとき Modal 起動を行わない（URL/Token があっても無効）。
+	// Enable が false のとき Modal 起動を行わない（URL があっても無効）。
 	Enable bool `envconfig:"MODAL_ENABLE" default:"true"`
 	// TriggerURL は Modal の run_batch HTTP endpoint（deploy 後に出る URL）。
 	TriggerURL string `envconfig:"MODAL_TRIGGER_URL"`
-	// TriggerToken は run_batch 起動時の認証トークン（query ?token=）。Modal Secret と同じ値。
-	TriggerToken string `envconfig:"MODAL_TRIGGER_TOKEN"`
 	// BatchThreshold は Modal を起こす pending 画像ジョブ数の閾値。
 	// 推論の EMBEDDING_BATCH_SIZE とは別（こちらは「何件溜まったら起動するか」）。
 	// 起動後の Modal は text も claim する（画像が重いので起動し、起きている間に text も消化）。

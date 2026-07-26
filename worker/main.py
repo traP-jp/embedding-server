@@ -39,7 +39,7 @@ def main() -> None:
         raise SystemExit(1)
 
     log.info("worker components init started")
-    api = ApiClient(config.api_base_url)
+    api = ApiClient(config.api_base_url, config.api_key)
     object_store = ObjectStore(config)
     ocr = OcrEngine(config)
     embedder = EmbeddingEngine(config)

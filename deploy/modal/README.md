@@ -53,15 +53,21 @@ mise run modal-run
 `modal deploy worker/modal_app.py`（`MODAL_ENABLE_SCHEDULE` なし）すると
 `run_batch` という HTTP endpoint が公開される。
 
-1. `deploy/modal/.env` に `MODAL_TRIGGER_TOKEN` と `MODAL_GPU=T4` を入れる
+1. `deploy/modal/.env` にルートと同じ `API_KEY` と `MODAL_GPU=T4` を入れる
 2. `mise run modal-secret` で Secret 更新
 3. `mise run modal-deploy-push` でデプロイ（定期ポーリングなし）
-4. 出た `run_batch` の URL を Go の `MODAL_TRIGGER_URL` に入れる。
-   同じ `MODAL_TRIGGER_TOKEN` を Go 側にも設定する（Go は `?token=` で付与する）。
-5. Go 側で `MODAL_ENABLE=true` にする（`false` なら URL/Token があっても起動しない）。
+4. 出た `run_batch` の URL を Go の `MODAL_TRIGGER_URL` に入れる
+5. Go 側で `MODAL_ENABLE=true` と `API_KEY`（Modal と同じ値）を設定する
 
 Go は pending 画像ジョブが `MODAL_BATCH_THRESHOLD`（既定 10）以上で
-この URL に POST する（トークンは query `?token=`）。
+この URL に POST する（`?token=` に `API_KEY`）。
+
+`API_KEY` は次でも使う。
+
+- クライアント → Go（`Authorization: Bearer ...`）
+- worker/Modal → Go（`/internal/...`）
+- Go → webhook（`Authorization: Bearer ...`）
+- Go → Modal `run_batch`（query `token`）
 
 キューが空なら Modal worker は待たずに終了する。
 
@@ -87,7 +93,7 @@ Modal 用のデプロイ設定は、意図的に `compose.yaml` から分離し�
   閾値は「起こす条件」だけで、起こしたあとは溜まっている分をまとめて消化する。
 - Go は `processing` の画像ジョブがあるあいだは再 trigger しない（二重 spawn 防止）。
 - `MODAL_RECLAIM_TTL=30m` で古い `processing` を `pending` に戻し、残件があれば再起動する。
-- `MODAL_TRIGGER_TOKEN` は `run_batch` 起動口の Bearer トークン。
+- `API_KEY` は `run_batch` の query token、および Go API / webhook の Bearer でも使う。
 - function timeout を超えても残る場合は stale reclaim または閾値で起こす。
 - `OCR_ENABLED`、`MODEL_MAX_MEMORY_CUDA`、`QUANTIZATION` などの worker 設定は、
   `deploy/modal/.env` 側で管理する。Modal で画像上限を上げる場合は `deploy/modal/.env` の

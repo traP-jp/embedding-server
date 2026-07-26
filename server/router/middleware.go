@@ -1,9 +1,11 @@
 package router
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"embedding-server/api/api"
 
@@ -12,8 +14,8 @@ import (
 	echomiddleware "github.com/oapi-codegen/echo-v5-middleware"
 )
 
-// UseMiddleware は共通 HTTP ミドルウェア（リクエストログ・OpenAPI 検証）を登録する。
-func UseMiddleware(e *echo.Echo) error {
+// UseMiddleware は共通 HTTP ミドルウェア（リクエストログ・API キー認証・OpenAPI 検証）を登録する。
+func UseMiddleware(e *echo.Echo, apiKey string) error {
 	e.Use(mid.RequestLoggerWithConfig(mid.RequestLoggerConfig{
 		LogLatency:   true,
 		LogMethod:    true,
@@ -25,6 +27,8 @@ func UseMiddleware(e *echo.Echo) error {
 		LogValuesFunc: requestLogValues,
 	}))
 
+	e.Use(apiKeyAuth(apiKey))
+
 	swagger, err := api.GetSpec()
 	if err != nil {
 		return fmt.Errorf("load openapi spec: %w", err)
@@ -33,6 +37,26 @@ func UseMiddleware(e *echo.Echo) error {
 		DoNotValidateServers: true,
 	}))
 	return nil
+}
+
+func apiKeyAuth(apiKey string) echo.MiddlewareFunc {
+	expected := []byte(apiKey)
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			got := requestAPIKey(c.Request())
+			if subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+			}
+			return next(c)
+		}
+	}
+}
+
+func requestAPIKey(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	}
+	return strings.TrimSpace(r.Header.Get("X-API-Key"))
 }
 
 func requestLogValues(_ *echo.Context, v mid.RequestLoggerValues) error {

@@ -25,11 +25,13 @@ type WebhookPayload struct {
 
 type WebhookDispatcher struct {
 	client *http.Client
+	apiKey string
 }
 
-func NewWebhookDispatcher() *WebhookDispatcher {
+func NewWebhookDispatcher(apiKey string) *WebhookDispatcher {
 	return &WebhookDispatcher{
 		client: &http.Client{Timeout: webhookHTTPTimeout},
+		apiKey: apiKey,
 	}
 }
 
@@ -48,6 +50,7 @@ func (d *WebhookDispatcher) Notify(ctx context.Context, webhookURL string, paylo
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+d.apiKey)
 	resp, err := d.client.Do(req)
 	if err != nil {
 		slog.WarnContext(ctx, "webhook post failed", slog.String("job_id", payload.ID.String()), slog.Any("error", err))

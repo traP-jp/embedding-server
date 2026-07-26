@@ -87,7 +87,7 @@ func (t *ModalTrigger) MaybeTrigger(ctx context.Context) {
 			slog.ErrorContext(ctx, "modal trigger request build failed", slog.Any("error", err))
 			return
 		}
-		// run_batch は query ?token= で認証（Modal fastapi_endpoint）
+		// run_batch は query ?token= で認証（API_KEY と同じ値）
 		q := req.URL.Query()
 		q.Set("token", t.cfg.Token)
 		req.URL.RawQuery = q.Encode()

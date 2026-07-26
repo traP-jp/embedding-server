@@ -40,12 +40,12 @@ func main() {
 	}
 
 	notifier := service.NewLocalJobNotifier()
-	webhook := service.NewWebhookDispatcher()
+	webhook := service.NewWebhookDispatcher(cfg.APIKey)
 	repo := gormrepo.GetRepository(db)
 	modalTrigger := service.NewModalTrigger(service.ModalTriggerConfig{
 		Enable:         cfg.Modal.Enable,
 		URL:            cfg.Modal.TriggerURL,
-		Token:          cfg.Modal.TriggerToken,
+		Token:          cfg.APIKey,
 		BatchThreshold: cfg.Modal.BatchThreshold,
 		MinInterval:    cfg.Modal.MinInterval,
 		TriggerTimeout: cfg.Modal.TriggerTimeout,
@@ -63,7 +63,7 @@ func main() {
 	go modalTrigger.RunReclaimLoop(ctx)
 
 	e := echo.New()
-	if err := router.UseMiddleware(e); err != nil {
+	if err := router.UseMiddleware(e, cfg.APIKey); err != nil {
 		slog.Error("failed to configure middleware", slog.Any("error", err))
 		os.Exit(1)
 	}

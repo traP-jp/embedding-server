@@ -129,7 +129,7 @@ worker_secret = modal.Secret.from_name(
         "OCR_DET_THRESHOLD",
         "OCR_MAX_CHARS",
         "OCR_VISUALIZE",
-        "MODAL_TRIGGER_TOKEN",
+        "API_KEY",
     ],
 )
 
@@ -163,7 +163,7 @@ def _load_api() -> Any:
     from worker_api import ApiClient
 
     config = _load_config()
-    _api = ApiClient(config.api_base_url)
+    _api = ApiClient(config.api_base_url, config.api_key)
     return _api
 
 
@@ -284,9 +284,9 @@ trigger_image = modal.Image.debian_slim(python_version="3.12").uv_pip_install("f
 def run_batch(token: str = "") -> dict[str, Any]:
     import fastapi
 
-    expected = os.environ.get("MODAL_TRIGGER_TOKEN", "").strip()
+    expected = os.environ.get("API_KEY", "").strip()
     if not expected:
-        raise fastapi.HTTPException(status_code=500, detail="MODAL_TRIGGER_TOKEN is not configured")
+        raise fastapi.HTTPException(status_code=500, detail="API_KEY is not configured")
     if token != expected:
         raise fastapi.HTTPException(status_code=401, detail="unauthorized")
 
