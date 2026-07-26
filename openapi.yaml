@@ -6,7 +6,7 @@ info:
   version: 0.1.0
   description: |
     マルチモーダル埋め込み用のジョブ管理 API。
-    テキスト単体・画像単体・テキスト＋画像ペアを受け付ける。
+    テキストは同期、画像・multimodal は非同期（202 + job id / webhook / GET）。
     同一テキストの埋め込み結果はサーバー内部でキャッシュされる。
 
 servers:
@@ -80,9 +80,10 @@ paths:
     post:
       operationId: postEmbeddingsImages
       tags: [embeddings]
-      summary: 画像群の埋め込みベクトルを返す
+      summary: 画像群の埋め込みジョブを受け付ける
       description: |
-        ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
+        ジョブを DB に作成してすぐ job id を返す（非同期）。
+        完了後は webhook_url があれば通知し、GET /v1/embeddings/jobs/{id} でも取得できる。
       requestBody:
         required: true
         content:
@@ -97,33 +98,17 @@ paths:
                   maxItems: 4
                   items:
                     $ref: "#/components/schemas/EmbeddingImageFile"
+                webhook_url:
+                  $ref: "#/components/schemas/WebhookUrl"
       responses:
-        "200":
-          description: 埋め込みベクトル
+        "202":
+          description: ジョブを受け付けた
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EmbeddingResult"
+                $ref: "#/components/schemas/EmbeddingJobAccepted"
         "400":
           description: multipart または images フィールドが不正です（枚数・サイズ・形式を含む）
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: ジョブを受け付けられません。しばらく待ってから再送してください
-          headers:
-            Retry-After:
-              description: 推奨リトライ待機秒数
-              required: true
-              schema:
-                type: integer
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "504":
-          description: ジョブ処理がタイムアウトしました
           content:
             application/json:
               schema:
@@ -139,10 +124,10 @@ paths:
     post:
       operationId: postEmbeddingsMultimodal
       tags: [embeddings]
-      summary: テキストと画像群を合わせた埋め込みベクトルを返す
+      summary: テキストと画像群の埋め込みジョブを受け付ける
       description: |
-        text + images 用のエンドポイント。textのみ、imageのみでもリクエスト可能。
-        ジョブを DB に作成し、処理完了まで待機してから埋め込みベクトルを返す。
+        text + images 用。画像を含む場合は非同期（202 + job id）。
+        text のみの場合もこの endpoint では非同期にする（同期が必要なら /v1/embeddings/text を使う）。
       requestBody:
         required: true
         content:
@@ -158,36 +143,47 @@ paths:
                   maxItems: 4
                   items:
                     $ref: "#/components/schemas/EmbeddingImageFile"
+                webhook_url:
+                  $ref: "#/components/schemas/WebhookUrl"
               anyOf:
                 - required: [text]
                 - required: [images]
       responses:
-        "200":
-          description: 埋め込みベクトル
+        "202":
+          description: ジョブを受け付けた
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EmbeddingResult"
+                $ref: "#/components/schemas/EmbeddingJobAccepted"
         "400":
           description: text・images の指定が不正です（枚数・サイズ・形式を含む）
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: ジョブを受け付けられません。しばらく待ってから再送してください
-          headers:
-            Retry-After:
-              description: 推奨リトライ待機秒数
-              required: true
-              schema:
-                type: integer
+        "500":
+          description: サーバー内部エラー
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "504":
-          description: ジョブ処理がタイムアウトしました
+
+  /v1/embeddings/jobs/{id}:
+    get:
+      operationId: getEmbeddingsJob
+      tags: [embeddings]
+      summary: 埋め込みジョブの状態と結果を取得する
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: ジョブ状態
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingJobStatus"
+        "404":
+          description: 指定したジョブが見つかりません
           content:
             application/json:
               schema:
@@ -205,8 +201,16 @@ paths:
       tags: [internal-worker]
       summary: 次の pending ジョブをロックして取得
       description: |
-        DB 内で最古の pending ジョブを processing にし、id と payload を返す。
-        ジョブが無い場合は 204。
+        DB 内の pending ジョブを1件 processing にし、id と payload を返す。
+        `kinds` で取得したい種別を指定できる。省略時は text と image の両方（text 優先）。
+        text は画像なし、image は画像付き（multimodal 含む）。
+        該当ジョブが無い場合は 204。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimWorkerJobRequest"
       responses:
         "200":
           description: ジョブあり
@@ -222,6 +226,12 @@ paths:
                     $ref: "#/components/schemas/WorkerJobPayload"
         "204":
           $ref: "#/components/responses/NoContent"
+        "400":
+          description: kinds の指定が不正です
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: サーバー内部エラー
           content:
@@ -326,16 +336,60 @@ components:
       type: string
       format: uuid
 
+    WorkerJobKind:
+      type: string
+      enum: [text, image]
+      description: text は画像なしジョブ、image は画像付きジョブ（multimodal 含む）
+
+    ClaimWorkerJobRequest:
+      type: object
+      properties:
+        kinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerJobKind"
+          description: |
+            取得したいジョブ種別。省略時は text と image（text を優先して返す）。
+
     EmbeddingResult:
       type: object
       required: [vector]
       properties:
         vector:
           type: array
+          minItems: 4096
+          maxItems: 4096
           items:
             type: number
             format: float
-          description: 正規化済みの埋め込みベクトル
+          description: |
+            正規化済みの埋め込みベクトル。
+            Qwen3-VL-Embedding-8B の出力次元は 4096。
+
+    EmbeddingJobAccepted:
+      type: object
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/JobId"
+
+    EmbeddingJobStatus:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          $ref: "#/components/schemas/JobId"
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        result:
+          $ref: "#/components/schemas/EmbeddingResult"
+
+    WebhookUrl:
+      type: string
+      format: uri
+      maxLength: 2048
+      description: ジョブ完了・失敗時に POST する URL（任意）
 
     EmbeddingText:
       type: string

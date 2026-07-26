@@ -8,13 +8,23 @@ import (
 	"strings"
 
 	"embedding-server/api/api"
+	"embedding-server/api/model"
 	"embedding-server/api/repository"
 )
 
 // ClaimWorkerJobは、ワーカーが次に利用可能なジョブを取得するエンドポイントである。
-// 保留中のジョブがない場合は204を返す。
-func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobRequestObject) (api.ClaimWorkerJobResponseObject, error) {
-	job, err := h.repo.ClaimJob(ctx)
+// kinds で text / image を指定できる。省略時は両方（text 優先）。ジョブが無い場合は204。
+func (h *Handlers) ClaimWorkerJob(ctx context.Context, req api.ClaimWorkerJobRequestObject) (api.ClaimWorkerJobResponseObject, error) {
+	var filter repository.ClaimJobFilter
+	if req.Body != nil && req.Body.Kinds != nil && len(*req.Body.Kinds) > 0 {
+		kinds := make([]model.JobKind, 0, len(*req.Body.Kinds))
+		for _, kind := range *req.Body.Kinds {
+			kinds = append(kinds, model.JobKind(kind))
+		}
+		filter.Kinds = kinds
+	}
+
+	job, err := h.repo.ClaimJob(ctx, filter)
 	if errors.Is(err, repository.ErrNoJob) {
 		return api.ClaimWorkerJob204Response{}, nil
 	}
@@ -44,11 +54,6 @@ func (h *Handlers) ClaimWorkerJob(ctx context.Context, _ api.ClaimWorkerJobReque
 // CompleteWorkerJobは、ジョブの正常な完了を記録する。
 // ジョブペイロードがテキストのみの場合、サーバーはそれを内部にキャッシュする。
 func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorkerJobRequestObject) (api.CompleteWorkerJobResponseObject, error) {
-	if req.Body == nil || len(req.Body.Result.Vector) == 0 {
-		slog.Warn("worker job complete rejected", slog.String("job_id", req.Id.String()), slog.String("reason", "empty_vector"))
-		return api.CompleteWorkerJob400JSONResponse{Message: "result vector required"}, nil
-	}
-
 	job, err := h.repo.GetJob(ctx, req.Id)
 	if errors.Is(err, repository.ErrJobNotFound) {
 		slog.Warn("worker job complete not found", slog.String("job_id", req.Id.String()))
@@ -75,9 +80,10 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 	}
 
 	h.notifier.Notify(req.Id)
+	h.embedding.NotifyWebhookCompleted(ctx, job, req.Body.Result)
 
 	// テキスト埋め込みジョブの結果はキャッシュする。
-	if strings.TrimSpace(job.Text) != "" && len(job.ImageObjectKeys) == 0 {
+	if job.Kind == model.JobKindText && strings.TrimSpace(job.Text) != "" {
 		if err := h.repo.SetTextCache(ctx, job.Text, resultRaw); err != nil {
 			slog.Warn("complete cache set failed, continuing anyway", slog.String("job_id", req.Id.String()), slog.Any("error", err))
 		} else {
@@ -115,6 +121,7 @@ func (h *Handlers) FailWorkerJob(ctx context.Context, req api.FailWorkerJobReque
 	}
 
 	h.notifier.Notify(req.Id)
+	h.embedding.NotifyWebhookFailed(ctx, job)
 
 	if err := h.jobFile.RemoveJobImages(ctx, job.ImageObjectKeys); err != nil {
 		slog.Error("fail cleanup image dir", slog.String("job_id", req.Id.String()), slog.Any("error", err))

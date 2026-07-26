@@ -14,8 +14,11 @@ class ApiClient:
         self.base_url = base_url
 
     # jobの取得
-    def claim(self) -> dict[str, Any] | None:
-        response = self._post_json("/internal/worker/jobs/claim", None)
+    def claim(self, kinds: list[str] | None = None) -> dict[str, Any] | None:
+        body: dict[str, Any] | None = None
+        if kinds is not None:
+            body = {"kinds": kinds}
+        response = self._post_json("/internal/worker/jobs/claim", body)
         if response.status_code == 204 or not response.content:
             return None
         job = response.json()

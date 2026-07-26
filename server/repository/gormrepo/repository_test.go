@@ -28,6 +28,10 @@ func setupTestDB(t *testing.T) *Repository {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
+	// SQLite はデフォルトで FK 無効。Postgres 本番相当の挙動に合わせる。
+	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.AutoMigrate(model.Models()...); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +43,7 @@ func createJob(t *testing.T, repo *Repository, ctx context.Context, id uuid.UUID
 	if err := repo.CreateJob(ctx, repository.CreateJobInput{
 		ID:              id,
 		Text:            text,
+		Kind:            model.JobKindFromHasImages(len(imageKeys) > 0),
 		ImageObjectKeys: imageKeys,
 	}); err != nil {
 		t.Fatalf("CreateJob failed: %v", err)
@@ -122,7 +127,7 @@ func TestRepository_ClaimJob(t *testing.T) {
 
 	createJob(t, repo, ctx, jobID, "hello", []string{"jobs/test/input-0.png"})
 
-	job, err := repo.ClaimJob(ctx)
+	job, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 	if err != nil {
 		t.Fatalf("ClaimJob failed: %v", err)
 	}
@@ -149,7 +154,7 @@ func TestRepository_ClaimJob_NoJob(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	_, err := repo.ClaimJob(ctx)
+	_, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 	if !errors.Is(err, repository.ErrNoJob) {
 		t.Errorf("got error %v, want ErrNoJob", err)
 	}
@@ -166,12 +171,69 @@ func TestRepository_ClaimJob_FIFO(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	createJob(t, repo, ctx, id2, "second", nil)
 
-	claimed, err := repo.ClaimJob(ctx)
+	claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if claimed.ID != id1 {
 		t.Errorf("expected first job %s, got %s", id1, claimed.ID)
+	}
+}
+
+func TestRepository_ClaimJob_TextOnlySkipsImage(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	imageID := uuid.New()
+	textID := uuid.New()
+	createJob(t, repo, ctx, imageID, "with image", []string{"jobs/a/0.png"})
+	time.Sleep(10 * time.Millisecond)
+	createJob(t, repo, ctx, textID, "text only", nil)
+
+	claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{Kinds: []model.JobKind{model.JobKindText}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != textID {
+		t.Errorf("expected text job %s, got %s", textID, claimed.ID)
+	}
+}
+
+func TestRepository_ClaimJob_ImageOnlySkipsText(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	textID := uuid.New()
+	imageID := uuid.New()
+	createJob(t, repo, ctx, textID, "text only", nil)
+	time.Sleep(10 * time.Millisecond)
+	createJob(t, repo, ctx, imageID, "with image", []string{"jobs/a/0.png"})
+
+	claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{Kinds: []model.JobKind{model.JobKindImage}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != imageID {
+		t.Errorf("expected image job %s, got %s", imageID, claimed.ID)
+	}
+}
+
+func TestRepository_ClaimJob_PrefersTextWhenBoth(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	imageID := uuid.New()
+	textID := uuid.New()
+	createJob(t, repo, ctx, imageID, "with image", []string{"jobs/a/0.png"})
+	time.Sleep(10 * time.Millisecond)
+	createJob(t, repo, ctx, textID, "text only", nil)
+
+	claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != textID {
+		t.Errorf("expected text-priority job %s, got %s", textID, claimed.ID)
 	}
 }
 
@@ -193,7 +255,7 @@ func TestRepository_ClaimJob_ConcurrentSafety(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			claimed, err := repo.ClaimJob(ctx)
+			claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 			if err == nil {
 				if claimed.ID != jobID {
 					errCh <- errors.New("claimed unexpected job id")
@@ -228,7 +290,7 @@ func TestRepository_CompleteJob(t *testing.T) {
 	jobID := uuid.New()
 
 	createJob(t, repo, ctx, jobID, "hello", nil)
-	repo.ClaimJob(ctx)
+	repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 
 	result := json.RawMessage(`{"vector":[0.1, 0.2]}`)
 	err := repo.CompleteJob(ctx, jobID, result)
@@ -268,7 +330,7 @@ func TestRepository_CompleteJob_EmptyResult(t *testing.T) {
 	jobID := uuid.New()
 
 	createJob(t, repo, ctx, jobID, "hello", nil)
-	repo.ClaimJob(ctx)
+	repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 
 	err := repo.CompleteJob(ctx, jobID, json.RawMessage(``))
 	if err == nil {
@@ -292,7 +354,7 @@ func TestRepository_FailJob(t *testing.T) {
 	jobID := uuid.New()
 
 	createJob(t, repo, ctx, jobID, "hello", nil)
-	repo.ClaimJob(ctx)
+	repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 
 	err := repo.FailJob(ctx, jobID)
 	if err != nil {
@@ -333,42 +395,108 @@ func TestRepository_FailJob_NotFound(t *testing.T) {
 
 // --- CountPendingテスト ---
 
-func TestRepository_CountPendingJobs(t *testing.T) {
+func TestRepository_CountPendingTextAndImageJobs(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
 	createJob(t, repo, ctx, uuid.New(), "a", nil)
 	createJob(t, repo, ctx, uuid.New(), "b", nil)
-	createJob(t, repo, ctx, uuid.New(), "c", nil)
+	createJob(t, repo, ctx, uuid.New(), "c", []string{"jobs/c/input-0.png"})
 
-	count, err := repo.CountPendingJobs(ctx)
+	textCount, err := repo.CountPendingTextJobs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Errorf("expected 3 pending jobs, got %d", count)
+	if textCount != 2 {
+		t.Errorf("expected 2 pending text jobs, got %d", textCount)
 	}
 
-	repo.ClaimJob(ctx)
-	count, err = repo.CountPendingJobs(ctx)
+	imageCount, err := repo.CountPendingImageJobs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Errorf("expected 2 pending jobs after claim, got %d", count)
+	if imageCount != 1 {
+		t.Errorf("expected 1 pending image job, got %d", imageCount)
+	}
+
+	if _, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{Kinds: []model.JobKind{model.JobKindText}}); err != nil {
+		t.Fatal(err)
+	}
+	textCount, err = repo.CountPendingTextJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if textCount != 1 {
+		t.Errorf("expected 1 pending text job after claim, got %d", textCount)
 	}
 }
 
-func TestRepository_CountPendingJobs_Zero(t *testing.T) {
+func TestRepository_CountPendingTextAndImageJobs_Zero(t *testing.T) {
 	repo := setupTestDB(t)
 	ctx := context.Background()
 
-	count, err := repo.CountPendingJobs(ctx)
+	textCount, err := repo.CountPendingTextJobs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 0 {
-		t.Errorf("expected 0 pending jobs, got %d", count)
+	if textCount != 0 {
+		t.Errorf("expected 0 pending text jobs, got %d", textCount)
+	}
+
+	imageCount, err := repo.CountPendingImageJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageCount != 0 {
+		t.Errorf("expected 0 pending image jobs, got %d", imageCount)
+	}
+}
+
+func TestRepository_ReclaimStaleProcessingJobs(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	id := uuid.New()
+	createJob(t, repo, ctx, id, "stale", []string{"jobs/stale/input-0.png"})
+	if _, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{}); err != nil {
+		t.Fatalf("ClaimJob: %v", err)
+	}
+
+	// updated_at を古くする
+	if err := repo.db.WithContext(ctx).
+		Model(&model.EmbeddingJob{}).
+		Where("id = ?", id).
+		Update("updated_at", time.Now().Add(-31*time.Minute)).Error; err != nil {
+		t.Fatalf("backdate updated_at: %v", err)
+	}
+
+	n, err := repo.ReclaimStaleProcessingJobs(ctx, 30*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 reclaimed, got %d", n)
+	}
+
+	state, err := repo.GetJobState(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != model.StatusPending {
+		t.Fatalf("expected pending after reclaim, got %s", state.Status)
+	}
+
+	fresh := uuid.New()
+	createJob(t, repo, ctx, fresh, "fresh", []string{"jobs/fresh/input-0.png"})
+	if _, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{}); err != nil {
+		t.Fatalf("ClaimJob fresh: %v", err)
+	}
+	n, err = repo.ReclaimStaleProcessingJobs(ctx, 30*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 reclaimed for fresh job, got %d", n)
 	}
 }
 
@@ -396,9 +524,39 @@ func TestRepository_CleanupExpiredJobs(t *testing.T) {
 		t.Errorf("expected 2 deleted jobs, got %d", deleted)
 	}
 
-	count, _ := repo.CountPendingJobs(ctx)
+	count, _ := repo.CountPendingTextJobs(ctx)
 	if count != 1 {
 		t.Errorf("expected 1 remaining job, got %d", count)
+	}
+}
+
+func TestRepository_JobImageForeignKey(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	// 存在しない job_id への insert は FK で弾く。
+	err := repo.db.WithContext(ctx).Create(&model.EmbeddingJobImage{
+		ID:        uuid.New(),
+		JobID:     uuid.New(),
+		ObjectKey: "jobs/orphan/input-0.png",
+	}).Error
+	if err == nil {
+		t.Fatal("expected FK violation for orphan embedding_job_images row")
+	}
+
+	jobID := uuid.New()
+	createJob(t, repo, ctx, jobID, "with image", []string{"jobs/fk/input-0.png"})
+
+	// 親削除で子も CASCADE される。
+	if _, err := gorm.G[model.EmbeddingJob](repo.db).Where("id = ?", jobID).Delete(ctx); err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	var n int64
+	if err := repo.db.WithContext(ctx).Model(&model.EmbeddingJobImage{}).Where("job_id = ?", jobID).Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected cascaded image delete, got %d rows", n)
 	}
 }
 
@@ -602,7 +760,7 @@ func TestRepository_FullLifecycle(t *testing.T) {
 	}
 
 	// 3. ジョブを取得
-	claimed, err := repo.ClaimJob(ctx)
+	claimed, err := repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 	if err != nil {
 		t.Fatalf("ClaimJob failed: %v", err)
 	}
@@ -659,7 +817,7 @@ func TestRepository_FailLifecycle(t *testing.T) {
 
 	jobID := uuid.New()
 	createJob(t, repo, ctx, jobID, "fail test", nil)
-	repo.ClaimJob(ctx)
+	repo.ClaimJob(ctx, repository.ClaimJobFilter{})
 
 	if err := repo.FailJob(ctx, jobID); err != nil {
 		t.Fatalf("FailJob failed: %v", err)

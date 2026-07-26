@@ -47,12 +47,12 @@ func setupTest(t *testing.T) *testSetup {
 	repo := &testCombinedRepo{job: jobMock, cache: cacheMock}
 
 	e := echo.New()
-	if err := UseOpenAPIRequestValidator(e); err != nil {
-		t.Fatalf("configure openapi request validator: %v", err)
+	if err := UseMiddleware(e); err != nil {
+		t.Fatalf("configure middleware: %v", err)
 	}
 	notifier := service.NewLocalJobNotifier()
 	jobFile, fakeS3 := newFakeS3JobFileService(t)
-	embeddingSvc := service.NewEmbeddingService(repo, notifier, jobFile)
+	embeddingSvc := service.NewEmbeddingService(repo, notifier, jobFile, nil, nil)
 	handlers := NewHandlers(repo, notifier, embeddingSvc, jobFile)
 
 	api.RegisterHandlers(e, api.NewStrictHandler(handlers, nil))
@@ -150,8 +150,8 @@ func (c *testCombinedRepo) GetJob(ctx context.Context, id uuid.UUID) (*repositor
 func (c *testCombinedRepo) CreateJob(ctx context.Context, input repository.CreateJobInput) error {
 	return c.job.CreateJob(ctx, input)
 }
-func (c *testCombinedRepo) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
-	return c.job.ClaimJob(ctx)
+func (c *testCombinedRepo) ClaimJob(ctx context.Context, filter repository.ClaimJobFilter) (*repository.JobRecord, error) {
+	return c.job.ClaimJob(ctx, filter)
 }
 func (c *testCombinedRepo) GetJobState(ctx context.Context, id uuid.UUID) (repository.JobState, error) {
 	return c.job.GetJobState(ctx, id)
@@ -162,8 +162,17 @@ func (c *testCombinedRepo) CompleteJob(ctx context.Context, id uuid.UUID, result
 func (c *testCombinedRepo) FailJob(ctx context.Context, id uuid.UUID) error {
 	return c.job.FailJob(ctx, id)
 }
-func (c *testCombinedRepo) CountPendingJobs(ctx context.Context) (int, error) {
-	return c.job.CountPendingJobs(ctx)
+func (c *testCombinedRepo) CountPendingTextJobs(ctx context.Context) (int, error) {
+	return c.job.CountPendingTextJobs(ctx)
+}
+func (c *testCombinedRepo) CountPendingImageJobs(ctx context.Context) (int, error) {
+	return c.job.CountPendingImageJobs(ctx)
+}
+func (c *testCombinedRepo) CountProcessingImageJobs(ctx context.Context) (int, error) {
+	return c.job.CountProcessingImageJobs(ctx)
+}
+func (c *testCombinedRepo) ReclaimStaleProcessingJobs(ctx context.Context, ttl time.Duration) (int64, error) {
+	return c.job.ReclaimStaleProcessingJobs(ctx, ttl)
 }
 func (c *testCombinedRepo) ExpiredJobImageKeys(ctx context.Context, ttl time.Duration) ([]string, error) {
 	return c.job.ExpiredJobImageKeys(ctx, ttl)

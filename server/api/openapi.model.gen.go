@@ -11,6 +11,54 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for EmbeddingJobStatusStatus.
+const (
+	Completed  EmbeddingJobStatusStatus = "completed"
+	Failed     EmbeddingJobStatusStatus = "failed"
+	Pending    EmbeddingJobStatusStatus = "pending"
+	Processing EmbeddingJobStatusStatus = "processing"
+)
+
+// Valid indicates whether the value is a known member of the EmbeddingJobStatusStatus enum.
+func (e EmbeddingJobStatusStatus) Valid() bool {
+	switch e {
+	case Completed:
+		return true
+	case Failed:
+		return true
+	case Pending:
+		return true
+	case Processing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkerJobKind.
+const (
+	Image WorkerJobKind = "image"
+	Text  WorkerJobKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the WorkerJobKind enum.
+func (e WorkerJobKind) Valid() bool {
+	switch e {
+	case Image:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
+// ClaimWorkerJobRequest defines model for ClaimWorkerJobRequest.
+type ClaimWorkerJobRequest struct {
+	// Kinds 取得したいジョブ種別。省略時は text と image（text を優先して返す）。
+	Kinds *[]WorkerJobKind `json:"kinds,omitempty"`
+}
+
 // EmbeddingImageFile 埋め込みに用いる画像バイナリ。
 // 対応形式: image/png, image/jpeg, image/webp。
 // 1ファイルあたり最大 20 MiB（20971520 bytes）。
@@ -25,9 +73,25 @@ type EmbeddingImageObject struct {
 // EmbeddingImageObjects worker が参照する画像オブジェクトのリスト
 type EmbeddingImageObjects = []EmbeddingImageObject
 
+// EmbeddingJobAccepted defines model for EmbeddingJobAccepted.
+type EmbeddingJobAccepted struct {
+	Id JobId `json:"id"`
+}
+
+// EmbeddingJobStatus defines model for EmbeddingJobStatus.
+type EmbeddingJobStatus struct {
+	Id     JobId                    `json:"id"`
+	Result *EmbeddingResult         `json:"result,omitempty"`
+	Status EmbeddingJobStatusStatus `json:"status"`
+}
+
+// EmbeddingJobStatusStatus defines model for EmbeddingJobStatus.Status.
+type EmbeddingJobStatusStatus string
+
 // EmbeddingResult defines model for EmbeddingResult.
 type EmbeddingResult struct {
-	// Vector 正規化済みの埋め込みベクトル
+	// Vector 正規化済みの埋め込みベクトル。
+	// Qwen3-VL-Embedding-8B の出力次元は 4096。
 	Vector []float32 `json:"vector"`
 }
 
@@ -43,6 +107,12 @@ type ErrorResponse struct {
 
 // JobId defines model for JobId.
 type JobId = openapi_types.UUID
+
+// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+type WebhookUrl = string
+
+// WorkerJobKind text は画像なしジョブ、image は画像付きジョブ（multimodal 含む）
+type WorkerJobKind string
 
 // WorkerJobPayload worker が処理するジョブ内容
 type WorkerJobPayload struct {
@@ -62,6 +132,9 @@ type CompleteWorkerJobJSONBody struct {
 // PostEmbeddingsImagesMultipartBody defines parameters for PostEmbeddingsImages.
 type PostEmbeddingsImagesMultipartBody struct {
 	Images []EmbeddingImageFile `json:"images"`
+
+	// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+	WebhookUrl *WebhookUrl `json:"webhook_url,omitempty"`
 }
 
 // PostEmbeddingsMultimodalMultipartBody defines parameters for PostEmbeddingsMultimodal.
@@ -70,8 +143,11 @@ type PostEmbeddingsMultimodalMultipartBody struct {
 
 	// Text 埋め込みに用いるテキスト。
 	// 1〜8192 文字。空文字は不可。
-	Text  *EmbeddingText `json:"text,omitempty"`
-	union json.RawMessage
+	Text *EmbeddingText `json:"text,omitempty"`
+
+	// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+	WebhookUrl *WebhookUrl `json:"webhook_url,omitempty"`
+	union      json.RawMessage
 }
 
 // PostEmbeddingsMultimodalMultipartBody0 defines parameters for PostEmbeddingsMultimodal.
@@ -86,6 +162,9 @@ type PostEmbeddingsTextJSONBody struct {
 	// 1〜8192 文字。空文字は不可。
 	Text EmbeddingText `json:"text"`
 }
+
+// ClaimWorkerJobJSONRequestBody defines body for ClaimWorkerJob for application/json ContentType.
+type ClaimWorkerJobJSONRequestBody = ClaimWorkerJobRequest
 
 // CompleteWorkerJobJSONRequestBody defines body for CompleteWorkerJob for application/json ContentType.
 type CompleteWorkerJobJSONRequestBody CompleteWorkerJobJSONBody
@@ -177,6 +256,13 @@ func (t PostEmbeddingsMultimodalMultipartBody) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("error marshaling 'text': %w", err)
 		}
 	}
+
+	if t.WebhookUrl != nil {
+		object["webhook_url"], err = json.Marshal(t.WebhookUrl)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'webhook_url': %w", err)
+		}
+	}
 	b, err = json.Marshal(object)
 	return b, err
 }
@@ -203,6 +289,13 @@ func (t *PostEmbeddingsMultimodalMultipartBody) UnmarshalJSON(b []byte) error {
 		err = json.Unmarshal(raw, &t.Text)
 		if err != nil {
 			return fmt.Errorf("error reading 'text': %w", err)
+		}
+	}
+
+	if raw, found := object["webhook_url"]; found {
+		err = json.Unmarshal(raw, &t.WebhookUrl)
+		if err != nil {
+			return fmt.Errorf("error reading 'webhook_url': %w", err)
 		}
 	}
 

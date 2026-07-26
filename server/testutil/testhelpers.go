@@ -113,8 +113,8 @@ func (c *combinedRepo) GetJob(ctx context.Context, id uuid.UUID) (*repository.Jo
 func (c *combinedRepo) CreateJob(ctx context.Context, input repository.CreateJobInput) error {
 	return c.job.CreateJob(ctx, input)
 }
-func (c *combinedRepo) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
-	return c.job.ClaimJob(ctx)
+func (c *combinedRepo) ClaimJob(ctx context.Context, filter repository.ClaimJobFilter) (*repository.JobRecord, error) {
+	return c.job.ClaimJob(ctx, filter)
 }
 func (c *combinedRepo) GetJobState(ctx context.Context, id uuid.UUID) (repository.JobState, error) {
 	return c.job.GetJobState(ctx, id)
@@ -125,8 +125,17 @@ func (c *combinedRepo) CompleteJob(ctx context.Context, id uuid.UUID, result jso
 func (c *combinedRepo) FailJob(ctx context.Context, id uuid.UUID) error {
 	return c.job.FailJob(ctx, id)
 }
-func (c *combinedRepo) CountPendingJobs(ctx context.Context) (int, error) {
-	return c.job.CountPendingJobs(ctx)
+func (c *combinedRepo) CountPendingTextJobs(ctx context.Context) (int, error) {
+	return c.job.CountPendingTextJobs(ctx)
+}
+func (c *combinedRepo) CountPendingImageJobs(ctx context.Context) (int, error) {
+	return c.job.CountPendingImageJobs(ctx)
+}
+func (c *combinedRepo) CountProcessingImageJobs(ctx context.Context) (int, error) {
+	return c.job.CountProcessingImageJobs(ctx)
+}
+func (c *combinedRepo) ReclaimStaleProcessingJobs(ctx context.Context, ttl time.Duration) (int64, error) {
+	return c.job.ReclaimStaleProcessingJobs(ctx, ttl)
 }
 func (c *combinedRepo) ExpiredJobImageKeys(ctx context.Context, ttl time.Duration) ([]string, error) {
 	return c.job.ExpiredJobImageKeys(ctx, ttl)

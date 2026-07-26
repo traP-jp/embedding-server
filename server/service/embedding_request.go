@@ -10,9 +10,8 @@ import (
 )
 
 // traqの画像の上限が20MB程度なので、同程度の上限を設ける。
+// 枚数・サイズ上限のリクエスト検証は OpenAPI 側。ここは読み取り時のメモリ保護。
 const maxImageUploadBytes = 20 << 20 // 20 MiB
-
-const maxEmbeddingImages = 4
 
 const maxTextChars = 8192
 
@@ -21,17 +20,15 @@ const maxTextUploadBytes = maxTextChars * utf8.UTFMax
 var (
 	ErrEmbeddingImageTooLarge        = errors.New("image too large")
 	ErrEmbeddingUnsupportedImageType = errors.New("unsupported image type")
-	ErrEmbeddingTooManyImages        = errors.New("too many images")
-	ErrEmbeddingTextTooLong          = errors.New("text too long")
-	ErrEmbeddingTextNotAllowed       = errors.New("text not allowed")
 	ErrEmbeddingInvalidMultipart     = errors.New("invalid multipart")
 	ErrEmbeddingCannotReadUpload     = errors.New("cannot read upload")
 )
 
 // EmbeddingInput は埋め込みリクエストの入力を表す。
 type EmbeddingInput struct {
-	Text   string
-	Images [][]byte
+	Text       string
+	Images     [][]byte
+	WebhookURL string
 }
 
 // EmbeddingInputRequest は埋め込み入力の読み取り元を表す。
@@ -54,6 +51,8 @@ const (
 )
 
 // ReadEmbeddingInput はリクエストから埋め込み入力を読み取り、正規化と検査を行う。
+// 枚数・サイズ・未知フィールドなどは OpenAPI validator に任せる。
+// ここでは multipart の実体読み取りと、画像マジックバイト検査・text の trim/空判定を行う。
 func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 	// textのみならすぐに返す
 	if req.Mode == EmbeddingInputText {
@@ -83,21 +82,17 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 		switch part.FormName() {
 		case "text":
 			if req.Mode == EmbeddingInputImages {
-				partErr = ErrEmbeddingTextNotAllowed
+				// images endpoint では OpenAPI が弾く。直接呼び出し時のガード。
+				partErr = ErrEmbeddingInvalidMultipart
 				break
 			}
 			b, err := io.ReadAll(io.LimitReader(part, maxTextUploadBytes+1))
 			if err != nil || len(b) > maxTextUploadBytes {
-				partErr = ErrEmbeddingTextTooLong
+				partErr = ErrEmbeddingInvalidMultipart
 				break
 			}
 			input.Text, partErr = normalizeEmbeddingText(string(b))
 		case "images":
-			// 画像が多すぎた場合は弾く
-			if len(input.Images) >= maxEmbeddingImages {
-				partErr = ErrEmbeddingTooManyImages
-				break
-			}
 			raw, err := io.ReadAll(io.LimitReader(part, maxImageUploadBytes+1))
 			if err != nil {
 				partErr = ErrEmbeddingCannotReadUpload
@@ -115,6 +110,13 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 			default:
 				partErr = ErrEmbeddingUnsupportedImageType
 			}
+		case "webhook_url":
+			b, err := io.ReadAll(io.LimitReader(part, 2048+1))
+			if err != nil || len(b) > 2048 {
+				partErr = ErrEmbeddingInvalidMultipart
+				break
+			}
+			input.WebhookURL = strings.TrimSpace(string(b))
 		default:
 			partErr = ErrEmbeddingInvalidMultipart
 		}
@@ -138,9 +140,6 @@ func normalizeEmbeddingText(text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", ErrEmbeddingInputRequired
-	}
-	if utf8.RuneCountInString(text) > maxTextChars {
-		return "", ErrEmbeddingTextTooLong
 	}
 	return text, nil
 }

@@ -45,18 +45,18 @@ func (m *MockJobRepository) EXPECT() *MockJobRepositoryMockRecorder {
 }
 
 // ClaimJob mocks base method.
-func (m *MockJobRepository) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
+func (m *MockJobRepository) ClaimJob(ctx context.Context, filter repository.ClaimJobFilter) (*repository.JobRecord, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClaimJob", ctx)
+	ret := m.ctrl.Call(m, "ClaimJob", ctx, filter)
 	ret0, _ := ret[0].(*repository.JobRecord)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ClaimJob indicates an expected call of ClaimJob.
-func (mr *MockJobRepositoryMockRecorder) ClaimJob(ctx any) *gomock.Call {
+func (mr *MockJobRepositoryMockRecorder) ClaimJob(ctx, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimJob", reflect.TypeOf((*MockJobRepository)(nil).ClaimJob), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimJob", reflect.TypeOf((*MockJobRepository)(nil).ClaimJob), ctx, filter)
 }
 
 // CleanupExpiredJobs mocks base method.
@@ -88,19 +88,49 @@ func (mr *MockJobRepositoryMockRecorder) CompleteJob(ctx, id, result any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockJobRepository)(nil).CompleteJob), ctx, id, result)
 }
 
-// CountPendingJobs mocks base method.
-func (m *MockJobRepository) CountPendingJobs(ctx context.Context) (int, error) {
+// CountPendingImageJobs mocks base method.
+func (m *MockJobRepository) CountPendingImageJobs(ctx context.Context) (int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CountPendingJobs", ctx)
+	ret := m.ctrl.Call(m, "CountPendingImageJobs", ctx)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// CountPendingJobs indicates an expected call of CountPendingJobs.
-func (mr *MockJobRepositoryMockRecorder) CountPendingJobs(ctx any) *gomock.Call {
+// CountPendingImageJobs indicates an expected call of CountPendingImageJobs.
+func (mr *MockJobRepositoryMockRecorder) CountPendingImageJobs(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPendingJobs", reflect.TypeOf((*MockJobRepository)(nil).CountPendingJobs), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPendingImageJobs", reflect.TypeOf((*MockJobRepository)(nil).CountPendingImageJobs), ctx)
+}
+
+// CountPendingTextJobs mocks base method.
+func (m *MockJobRepository) CountPendingTextJobs(ctx context.Context) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountPendingTextJobs", ctx)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountPendingTextJobs indicates an expected call of CountPendingTextJobs.
+func (mr *MockJobRepositoryMockRecorder) CountPendingTextJobs(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPendingTextJobs", reflect.TypeOf((*MockJobRepository)(nil).CountPendingTextJobs), ctx)
+}
+
+// CountProcessingImageJobs mocks base method.
+func (m *MockJobRepository) CountProcessingImageJobs(ctx context.Context) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountProcessingImageJobs", ctx)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountProcessingImageJobs indicates an expected call of CountProcessingImageJobs.
+func (mr *MockJobRepositoryMockRecorder) CountProcessingImageJobs(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountProcessingImageJobs", reflect.TypeOf((*MockJobRepository)(nil).CountProcessingImageJobs), ctx)
 }
 
 // CreateJob mocks base method.
@@ -174,4 +204,19 @@ func (m *MockJobRepository) GetJobState(ctx context.Context, id uuid.UUID) (repo
 func (mr *MockJobRepositoryMockRecorder) GetJobState(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobState", reflect.TypeOf((*MockJobRepository)(nil).GetJobState), ctx, id)
+}
+
+// ReclaimStaleProcessingJobs mocks base method.
+func (m *MockJobRepository) ReclaimStaleProcessingJobs(ctx context.Context, ttl time.Duration) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReclaimStaleProcessingJobs", ctx, ttl)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReclaimStaleProcessingJobs indicates an expected call of ReclaimStaleProcessingJobs.
+func (mr *MockJobRepositoryMockRecorder) ReclaimStaleProcessingJobs(ctx, ttl any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReclaimStaleProcessingJobs", reflect.TypeOf((*MockJobRepository)(nil).ReclaimStaleProcessingJobs), ctx, ttl)
 }

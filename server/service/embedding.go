@@ -16,8 +16,9 @@ import (
 
 const syncEmbeddingWaitTimeout = 500 * time.Second
 
-// workerが30s timeoutで処理するため、30件以上pendingがあれば受付を止める。
-const maxPendingEmbeddingJobs = 30
+// テキスト同期は部室 worker の待ち行列を塞ぐので、pending の text ジョブが多すぎたら受付拒否する。
+// 画像ジョブは非同期＋Modal バッチ前提のため、ここでは上限を掛けない。
+const maxPendingTextJobs = 30
 
 var (
 	ErrEmbeddingInputRequired = errors.New("embedding input required")
@@ -33,20 +34,30 @@ type EmbeddingService struct {
 	repo     repository.Repository
 	notifier JobNotifier
 	jobFile  *JobFileService
+	webhook  *WebhookDispatcher
+	modal    *ModalTrigger
 }
 
-func NewEmbeddingService(repo repository.Repository, notifier JobNotifier, jobFile *JobFileService) *EmbeddingService {
-	return &EmbeddingService{repo: repo, notifier: notifier, jobFile: jobFile}
-}
-
-// routerから呼ばれる関数。embeddingジョブを作成し、完了するまで待機する。
-func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingInput) (api.EmbeddingResult, error) {
-	if input.Text == "" && len(input.Images) == 0 {
-		slog.Warn("embedding create rejected", slog.String("reason", "empty_input"))
-		return api.EmbeddingResult{}, ErrEmbeddingInputRequired
+func NewEmbeddingService(
+	repo repository.Repository,
+	notifier JobNotifier,
+	jobFile *JobFileService,
+	webhook *WebhookDispatcher,
+	modal *ModalTrigger,
+) *EmbeddingService {
+	return &EmbeddingService{
+		repo:     repo,
+		notifier: notifier,
+		jobFile:  jobFile,
+		webhook:  webhook,
+		modal:    modal,
 	}
+}
 
-	if input.Text != "" && len(input.Images) == 0 { // textのみの場合にキャッシュを確認する
+// CreateEmbedding はテキスト同期用。ジョブ作成後に完了まで待つ。
+func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingInput) (api.EmbeddingResult, error) {
+	textOnly := input.Text != "" && len(input.Images) == 0
+	if textOnly {
 		raw, err := s.repo.GetTextCache(ctx, input.Text)
 		if err == nil {
 			var result api.EmbeddingResult
@@ -55,52 +66,121 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 				return result, nil
 			}
 			slog.Error("cache parse text", slog.Int("text_chars", len(input.Text)), slog.Any("error", err))
-		} else if !errors.Is(err, repository.ErrCacheNotFound) { // キャッシュがない以外のエラーはログに出す
+		} else if !errors.Is(err, repository.ErrCacheNotFound) {
 			slog.Error("cache get text", slog.Int("text_chars", len(input.Text)), slog.Any("error", err))
 			return api.EmbeddingResult{}, err
 		} else {
 			slog.Debug("embedding cache miss", slog.Int("text_chars", len(input.Text)))
 		}
+
+		count, err := s.repo.CountPendingTextJobs(ctx)
+		if err != nil {
+			slog.Error("count pending text jobs", slog.Any("error", err))
+			return api.EmbeddingResult{}, err
+		}
+		if count >= maxPendingTextJobs {
+			slog.Warn("embedding create rejected", slog.String("reason", "text_jobs_full"), slog.Int("pending_text_jobs", count))
+			return api.EmbeddingResult{}, ErrEmbeddingJobsFull
+		}
 	}
 
-	count, err := s.repo.CountPendingJobs(ctx)
+	id, err := s.enqueueJob(ctx, input)
 	if err != nil {
-		slog.Error("count pending jobs", slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
-	if count >= maxPendingEmbeddingJobs {
-		slog.Warn("embedding create rejected", slog.String("reason", "jobs_full"), slog.Int("pending_jobs", count))
-		return api.EmbeddingResult{}, ErrEmbeddingJobsFull
+	return s.waitEmbeddingResult(ctx, id)
+}
+
+// CreateAsyncEmbedding は画像系非同期用。job id だけ返す。
+func (s *EmbeddingService) CreateAsyncEmbedding(ctx context.Context, input EmbeddingInput) (uuid.UUID, error) {
+	id, err := s.enqueueJob(ctx, input)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if len(input.Images) > 0 && s.modal != nil {
+		s.modal.MaybeTrigger(ctx)
+	}
+	return id, nil
+}
+
+func (s *EmbeddingService) GetJobStatus(ctx context.Context, id uuid.UUID) (api.EmbeddingJobStatus, error) {
+	state, err := s.repo.GetJobState(ctx, id)
+	if errors.Is(err, repository.ErrJobNotFound) {
+		return api.EmbeddingJobStatus{}, repository.ErrJobNotFound
+	}
+	if err != nil {
+		return api.EmbeddingJobStatus{}, err
+	}
+
+	out := api.EmbeddingJobStatus{
+		Id:     id,
+		Status: api.EmbeddingJobStatusStatus(state.Status),
+	}
+	if state.Status == model.StatusCompleted && len(state.Result) > 0 {
+		var result api.EmbeddingResult
+		if err := json.Unmarshal(state.Result, &result); err != nil {
+			return api.EmbeddingJobStatus{}, err
+		}
+		out.Result = &result
+	}
+	return out, nil
+}
+
+func (s *EmbeddingService) NotifyWebhookCompleted(ctx context.Context, job *repository.JobRecord, result api.EmbeddingResult) {
+	if s.webhook == nil || job == nil {
+		return
+	}
+	s.webhook.Notify(ctx, job.WebhookURL, WebhookPayload{
+		ID:     job.ID,
+		Status: model.StatusCompleted,
+		Result: &result,
+	})
+}
+
+func (s *EmbeddingService) NotifyWebhookFailed(ctx context.Context, job *repository.JobRecord) {
+	if s.webhook == nil || job == nil {
+		return
+	}
+	s.webhook.Notify(ctx, job.WebhookURL, WebhookPayload{
+		ID:     job.ID,
+		Status: model.StatusFailed,
+		Error:  "job failed",
+	})
+}
+
+func (s *EmbeddingService) enqueueJob(ctx context.Context, input EmbeddingInput) (uuid.UUID, error) {
+	if input.Text == "" && len(input.Images) == 0 {
+		slog.Warn("embedding create rejected", slog.String("reason", "empty_input"))
+		return uuid.Nil, ErrEmbeddingInputRequired
 	}
 
 	id := uuid.New()
 	imageObjectKeys, err := s.jobFile.StoreJobImages(ctx, id, input.Images)
 	if err != nil {
 		slog.Error("write embedding job images", slog.String("job_id", id.String()), slog.Int("image_count", len(input.Images)), slog.Any("error", err))
-		return api.EmbeddingResult{}, err
+		return uuid.Nil, err
 	}
 
 	if err := s.repo.CreateJob(ctx, repository.CreateJobInput{
 		ID:              id,
 		Text:            input.Text,
+		WebhookURL:      input.WebhookURL,
+		Kind:            model.JobKindFromHasImages(len(input.Images) > 0),
 		ImageObjectKeys: imageObjectKeys,
 	}); err != nil {
 		slog.Error("create embedding job", slog.String("job_id", id.String()), slog.Any("error", err))
-		if err := s.jobFile.RemoveJobImages(ctx, imageObjectKeys); err != nil {
-			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", err))
+		if remErr := s.jobFile.RemoveJobImages(ctx, imageObjectKeys); remErr != nil {
+			slog.Error("cleanup image job dir", slog.String("job_id", id.String()), slog.Any("error", remErr))
 		}
-		return api.EmbeddingResult{}, err
+		return uuid.Nil, err
 	}
-
-	return s.waitEmbeddingResult(ctx, id)
+	return id, nil
 }
 
-// jobの終了を待つ。ジョブが完了していれば結果を返し、完了していなければ待機する。
 func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
 	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
 	defer deadline.Stop()
 
-	// Subscribeしてから結果を確認。これにより、Subscribe前にジョブが完了していた場合の通知取りこぼしを防ぐ。
 	ch, unsubscribe := s.notifier.Subscribe(id)
 	defer unsubscribe()
 
@@ -122,10 +202,8 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 	case <-ch:
 		return s.readEmbeddingResult(ctx, id)
 	}
-
 }
 
-// dbのjobの状態がcompletedかどうかを確認する。
 func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
 	job, err := s.repo.GetJobState(ctx, id)
 	if errors.Is(err, repository.ErrJobNotFound) {
@@ -140,9 +218,7 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 	case model.StatusFailed:
 		slog.Warn("embedding result failed", slog.String("job_id", id.String()))
 		return api.EmbeddingResult{}, repository.ErrJobFailed
-	case model.StatusPending:
-		return api.EmbeddingResult{}, errEmbeddingResultNotReady
-	case model.StatusProcessing:
+	case model.StatusPending, model.StatusProcessing:
 		return api.EmbeddingResult{}, errEmbeddingResultNotReady
 	case model.StatusCompleted:
 	}
@@ -152,6 +228,5 @@ func (s *EmbeddingService) readEmbeddingResult(ctx context.Context, id uuid.UUID
 		slog.Error("parse embedding result", slog.String("job_id", id.String()), slog.Any("error", err))
 		return api.EmbeddingResult{}, err
 	}
-
 	return result, nil
 }

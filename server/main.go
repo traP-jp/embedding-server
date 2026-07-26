@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 
 	"github.com/labstack/echo/v5"
-	mid "github.com/labstack/echo/v5/middleware"
 
 	"embedding-server/api/api"
 	"embedding-server/api/config"
@@ -42,9 +40,19 @@ func main() {
 	}
 
 	notifier := service.NewLocalJobNotifier()
-
+	webhook := service.NewWebhookDispatcher()
 	repo := gormrepo.GetRepository(db)
-	embedding := service.NewEmbeddingService(repo, notifier, jobFile)
+	modalTrigger := service.NewModalTrigger(service.ModalTriggerConfig{
+		Enable:         cfg.Modal.Enable,
+		URL:            cfg.Modal.TriggerURL,
+		Token:          cfg.Modal.TriggerToken,
+		BatchThreshold: cfg.Modal.BatchThreshold,
+		MinInterval:    cfg.Modal.MinInterval,
+		TriggerTimeout: cfg.Modal.TriggerTimeout,
+		ReclaimTTL:     cfg.Modal.ReclaimTTL,
+		ReclaimEvery:   cfg.Modal.ReclaimEvery,
+	}, repo)
+	embedding := service.NewEmbeddingService(repo, notifier, jobFile, webhook, modalTrigger)
 	handlers := router.NewHandlers(repo, notifier, embedding, jobFile)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
 
@@ -52,43 +60,11 @@ func main() {
 
 	cleanup := service.NewCleanupService(repo, jobFile)
 	go cleanup.Run(ctx)
+	go modalTrigger.RunReclaimLoop(ctx)
 
 	e := echo.New()
-
-	e.Use(mid.RequestLoggerWithConfig(mid.RequestLoggerConfig{
-		LogLatency:   true,
-		LogMethod:    true,
-		LogURI:       true,
-		LogStatus:    true,
-		LogRemoteIP:  true,
-		LogRequestID: true,
-		HandleError:  true,
-		LogValuesFunc: func(c *echo.Context, v mid.RequestLoggerValues) error {
-			// ワーカーのポーリングはジョブがない場合に204を返すため、正常系のログ出力を抑制する。
-			if v.Error == nil && v.Method == http.MethodPost && v.URI == "/internal/worker/jobs/claim" && v.Status == http.StatusNoContent {
-				return nil
-			}
-
-			attrs := []any{
-				slog.String("method", v.Method),
-				slog.String("uri", v.URI),
-				slog.Int("status", v.Status),
-				slog.String("latency", v.Latency.String()),
-				slog.String("remote_ip", v.RemoteIP),
-				slog.String("request_id", v.RequestID),
-			}
-			if v.Error == nil {
-				slog.Info("request", attrs...)
-				return nil
-			}
-
-			attrs = append(attrs, slog.Any("error", v.Error))
-			slog.Error("request", attrs...)
-			return nil
-		},
-	}))
-	if err := router.UseOpenAPIRequestValidator(e); err != nil {
-		slog.Error("failed to configure openapi request validator", slog.Any("error", err))
+	if err := router.UseMiddleware(e); err != nil {
+		slog.Error("failed to configure middleware", slog.Any("error", err))
 		os.Exit(1)
 	}
 	api.RegisterHandlers(e, strictHandlers)

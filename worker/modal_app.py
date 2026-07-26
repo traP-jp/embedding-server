@@ -31,16 +31,39 @@ LOCAL_DIR_IGNORE = [
     "*.egg-info",
     "*.egg-info/**",
 ]
-DEFAULT_MAX_JOBS_PER_RUN = int(os.environ.get("MODAL_MAX_JOBS_PER_RUN", "30"))
-DEFAULT_SCALEDOWN_WINDOW_SECONDS = 30
-DEFAULT_WORKER_RUN_SECONDS = int(os.environ.get("MODAL_WORKER_RUN_SECONDS", "300"))
-DEFAULT_IDLE_POLL_SECONDS = float(os.environ.get("MODAL_IDLE_POLL_SECONDS", "2"))
+DEFAULT_MAX_JOBS_PER_RUN = int(os.environ.get("MODAL_MAX_JOBS_PER_RUN", "0"))  # 0 = キュー空まで
+# process_queue の Modal function timeout（秒）。deploy 時に反映。
+DEFAULT_FUNCTION_TIMEOUT_SECONDS = int(os.environ.get("MODAL_FUNCTION_TIMEOUT_SECONDS", str(60 * 60 * 3)))
+DEFAULT_SCALEDOWN_WINDOW_SECONDS = int(os.environ.get("MODAL_SCALEDOWN_WINDOW_SECONDS", "30"))
+# 0 = ソフトな時間上限なし（Modal function timeout までキューを空にする）
+DEFAULT_WORKER_RUN_SECONDS = int(os.environ.get("MODAL_WORKER_RUN_SECONDS", "0"))
+DEFAULT_GPU = os.environ.get("MODAL_GPU", "T4")
 
 
 def _worker_dependencies() -> list[str]:
-    pyproject_path = WORKER_DIR / "pyproject.toml"
-    if not pyproject_path.exists():
-        pyproject_path = Path("/app/pyproject.toml")
+    candidates = [
+        WORKER_DIR / "pyproject.toml",
+        Path("/app/pyproject.toml"),
+        Path(__file__).resolve().parent / "pyproject.toml",
+    ]
+    pyproject_path = next((path for path in candidates if path.exists()), None)
+    # run_batch など worker をマウントしないコンテナでも module import が通るようにする。
+    # 画像ビルド自体は deploy 時にローカルの pyproject で解決される。
+    if pyproject_path is None:
+        return [
+            "torch>=2.7.0",
+            "torchvision>=0.22.0",
+            "accelerate>=1.0.0",
+            "bitsandbytes>=0.46.1",
+            "numpy>=1.26.0",
+            "qwen-vl-utils>=0.0.14",
+            "transformers>=4.57.0,<5",
+            "yomitoku>=0.13.0",
+            "boto3>=1.42.0,<2",
+            "httpx>=0.28.0,<1",
+            "pillow>=10.0.0",
+            "pydantic-settings>=2,<3",
+        ]
 
     with pyproject_path.open("rb") as f:
         project = tomllib.load(f)["project"]
@@ -106,6 +129,7 @@ worker_secret = modal.Secret.from_name(
         "OCR_DET_THRESHOLD",
         "OCR_MAX_CHARS",
         "OCR_VISUALIZE",
+        "MODAL_TRIGGER_TOKEN",
     ],
 )
 
@@ -166,19 +190,19 @@ def _load_job_components() -> tuple[Any, Any, Any]:
 
 @app.function(
     image=worker_image,
-    gpu=os.environ.get("MODAL_GPU", "A10"),
+    gpu=DEFAULT_GPU,
     volumes={CACHE_VOLUME_DIR: cache_volume},
     env=worker_env,
     secrets=[worker_secret],
-    timeout=60 * 60,
+    timeout=DEFAULT_FUNCTION_TIMEOUT_SECONDS,
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW_SECONDS,
     max_containers=int(os.environ.get("MODAL_MAX_CONTAINERS", "1")),
 )
 def process_queue(max_jobs: int = DEFAULT_MAX_JOBS_PER_RUN) -> int:
-    return _process_queue_impl(max_jobs, DEFAULT_WORKER_RUN_SECONDS, DEFAULT_IDLE_POLL_SECONDS)
+    return _process_queue_impl(max_jobs, DEFAULT_WORKER_RUN_SECONDS)
 
 
-def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: float) -> int:
+def _process_queue_impl(max_jobs: int, run_seconds: int) -> int:
     started = time.perf_counter()
     import httpx
     from job_runner import claim_jobs, run_jobs
@@ -187,12 +211,25 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
     config = _load_config()
     api = _load_api()
     batch_size = config.embedding_batch_size
+    # max_jobs<=0 / run_seconds<=0 は「キューが空になるまで」
+    job_limit = max_jobs if max_jobs > 0 else None
+    deadline = time.monotonic() + run_seconds if run_seconds > 0 else None
 
-    deadline = time.monotonic() + run_seconds
     completed = 0
-    while completed < max_jobs and time.monotonic() < deadline:
+    while True:
+        if job_limit is not None and completed >= job_limit:
+            break
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+
+        claim_n = batch_size
+        if job_limit is not None:
+            claim_n = min(batch_size, job_limit - completed)
+
         try:
-            jobs = claim_jobs(api, min(batch_size, max_jobs - completed))
+            # 起動条件は画像キューだが、起きている間は text もついでに消化する
+            # （text は 1 件あたり <1s。省略時 = text+image、サーバー側で text 優先）。
+            jobs = claim_jobs(api, claim_n)
         except httpx.HTTPStatusError as e:
             log.error("claim http=%s body=%s", e.response.status_code, e.response.content[:500])
             break
@@ -200,12 +237,9 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
             log.error("claim request error=%s", e)
             break
 
+        # push 起動前提: キューが空なら待たずに終了する。
         if not jobs:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            time.sleep(min(idle_poll_seconds, remaining))
-            continue
+            break
 
         if completed == 0:
             log.info(
@@ -216,9 +250,10 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
         embedder, ocr, object_store = _load_job_components()
         if completed == 0:
             log.info(
-                "modal first batch ready size=%s batch_size=%s elapsed_sec=%.3f",
+                "modal first batch ready size=%s batch_size=%s drain_all=%s elapsed_sec=%.3f",
                 len(jobs),
                 batch_size,
+                job_limit is None,
                 time.perf_counter() - started,
             )
         completed += run_jobs(api, embedder, ocr, object_store, jobs)
@@ -233,11 +268,37 @@ def _process_queue_impl(max_jobs: int, run_seconds: int, idle_poll_seconds: floa
     )
     return completed
 
+
+# Go から閾値到達時に叩く薄い起動口。GPU は使わず process_queue を spawn するだけ。
+# fastapi_endpoint は関数ごとに固定 URL を出す（ASGI の POST リダイレクト問題を避ける）。
+trigger_image = modal.Image.debian_slim(python_version="3.12").uv_pip_install("fastapi[standard]>=0.115.0")
+
+
+@app.function(
+    image=trigger_image,
+    secrets=[worker_secret],
+    timeout=60,
+    scaledown_window=10,
+)
+@modal.fastapi_endpoint(method="POST")
+def run_batch(token: str = "") -> dict[str, Any]:
+    import fastapi
+
+    expected = os.environ.get("MODAL_TRIGGER_TOKEN", "").strip()
+    if not expected:
+        raise fastapi.HTTPException(status_code=500, detail="MODAL_TRIGGER_TOKEN is not configured")
+    if token != expected:
+        raise fastapi.HTTPException(status_code=401, detail="unauthorized")
+
+    call = process_queue.spawn()  # デフォルトでキュー空までドレイン
+    return {"status": "started", "call_id": call.object_id}
+
+
 if os.environ.get("MODAL_ENABLE_SCHEDULE") == "1":
 
     @app.function(
         image=worker_image,
-        gpu=os.environ.get("MODAL_GPU", "A10"),
+        gpu=DEFAULT_GPU,
         volumes={CACHE_VOLUME_DIR: cache_volume},
         env=worker_env,
         secrets=[worker_secret],
@@ -247,7 +308,7 @@ if os.environ.get("MODAL_ENABLE_SCHEDULE") == "1":
         schedule=modal.Period(minutes=int(os.environ.get("MODAL_POLL_MINUTES", "1"))),
     )
     def poll_queue() -> int:
-        return _process_queue_impl(DEFAULT_MAX_JOBS_PER_RUN, DEFAULT_WORKER_RUN_SECONDS, DEFAULT_IDLE_POLL_SECONDS)
+        return _process_queue_impl(DEFAULT_MAX_JOBS_PER_RUN, DEFAULT_WORKER_RUN_SECONDS)
 
 
 @app.local_entrypoint()

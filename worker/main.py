@@ -44,14 +44,15 @@ def main() -> None:
     ocr = OcrEngine(config)
     embedder = EmbeddingEngine(config)
     log.info(
-        "worker components init completed embedding_batch_size=%s",
+        "worker components init completed embedding_batch_size=%s claim_kinds=text",
         config.embedding_batch_size,
     )
 
     while not _stop:
         try:
             try:
-                jobs = claim_jobs(api, config.embedding_batch_size)
+                # 部室 worker はテキストのみ（画像は Modal 側）。
+                jobs = claim_jobs(api, config.embedding_batch_size, kinds=["text"])
             except httpx.HTTPStatusError as e:
                 log.error("claim http=%s body=%s", e.response.status_code, e.response.content[:500])
                 time.sleep(2)

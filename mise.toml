@@ -50,7 +50,6 @@ uv run \
 [tasks.modal-run]
 description = "Modal worker を手動で1回実行する"
 run = """
-bash -lc '
 set -a
 source deploy/modal/.env
 set +a
@@ -59,13 +58,11 @@ uv run \
     --project worker \
     --extra deploy \
     modal run worker/modal_app.py
-'
 """
 
 [tasks.modal-deploy]
-description = "Modal worker の定期ポーリングをデプロイする"
+description = "Modal worker を定期ポーリング付きでデプロイする（非推奨・空振り課金注意）"
 run = """
-bash -lc '
 set -a
 source deploy/modal/.env
 set +a
@@ -73,7 +70,19 @@ MODAL_ENABLE_SCHEDULE=1 uv run \
     --project worker \
     --extra deploy \
     modal deploy worker/modal_app.py
-'
+"""
+
+[tasks.modal-deploy-push]
+description = "Modal worker を push 起動（run_batch）付きでデプロイする"
+run = """
+set -a
+source deploy/modal/.env
+set +a
+unset MODAL_ENABLE_SCHEDULE
+uv run \
+    --project worker \
+    --extra deploy \
+    modal deploy worker/modal_app.py
 """
 
 [tasks.fetch-traq-samples]

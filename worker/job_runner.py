@@ -95,14 +95,20 @@ class _PreparedJob:
     metrics: JobMetrics
 
 
-def claim_jobs(api: ApiClient, max_jobs: int) -> list[dict[str, Any]]:
+def claim_jobs(
+    api: ApiClient,
+    max_jobs: int,
+    kinds: list[str] | None = None,
+) -> list[dict[str, Any]]:
     # キューが空になるか max_jobs に達するまで claim を繰り返す。
     # 満杯を待たず、取れた分だけで返す。
+    # kinds=None は text+image（サーバー側で text 優先）。
+    # Modal は画像蓄積で起動するが、起きている間は text も消化する想定。
     if max_jobs < 1:
         return []
     jobs: list[dict[str, Any]] = []
     for _ in range(max_jobs):
-        job = api.claim()
+        job = api.claim(kinds=kinds)
         if job is None:
             break
         jobs.append(job)

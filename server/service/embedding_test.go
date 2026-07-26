@@ -18,7 +18,7 @@ import (
 
 func TestCreateEmbedding_EmptyInput(t *testing.T) {
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(nil, nil, jobFile)
+	svc := NewEmbeddingService(nil, nil, jobFile, nil, nil)
 
 	_, err := svc.CreateEmbedding(context.Background(), EmbeddingInput{})
 	if !errors.Is(err, ErrEmbeddingInputRequired) {
@@ -30,7 +30,7 @@ func TestCreateEmbedding_CacheHit(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	expected := api.EmbeddingResult{Vector: []float32{0.1, 0.2}}
 	raw, _ := json.Marshal(expected)
@@ -49,10 +49,10 @@ func TestCreateEmbedding_CacheParseError(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(json.RawMessage(`invalid`), nil)
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	m.Job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -89,7 +89,7 @@ func TestCreateEmbedding_CacheErrorNonNotFound(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	cacheErr := errors.New("database connection lost")
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, cacheErr)
@@ -107,10 +107,10 @@ func TestCreateEmbedding_JobsFull(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(30, nil)
+	m.Job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(30, nil)
 
 	_, err := svc.CreateEmbedding(context.Background(), EmbeddingInput{Text: "hello"})
 	if !errors.Is(err, ErrEmbeddingJobsFull) {
@@ -122,12 +122,11 @@ func TestCreateEmbedding_CreateJobFailure_ImageCleanup(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile, fake := newFakeS3JobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	images := [][]byte{pngHeader}
 
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -152,12 +151,11 @@ func TestCreateEmbedding_ImageInput(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	images := [][]byte{pngHeader}
 
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -194,12 +192,11 @@ func TestCreateEmbedding_TextAndImageInput(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	images := [][]byte{pngHeader}
 
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -239,10 +236,10 @@ func TestCreateEmbedding_JobFailed(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	m.Job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -273,10 +270,10 @@ func TestCreateEmbedding_Timeout(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	m.Job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 	m.Job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
 		repository.JobState{Status: model.StatusPending}, nil,
@@ -295,10 +292,10 @@ func TestCreateEmbedding_ContextCanceled(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	m.Cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	m.Job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 	m.Job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
 		repository.JobState{Status: model.StatusPending}, nil,
@@ -320,12 +317,11 @@ func TestCreateEmbedding_ImageCacheSkip(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	images := [][]byte{pngHeader}
 
-	m.Job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	m.Job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -365,7 +361,7 @@ func TestWaitEmbeddingResult_ImmediateCompletion(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -388,7 +384,7 @@ func TestWaitEmbeddingResult_NotificationWait(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	jobID := uuid.New()
 
@@ -424,7 +420,7 @@ func TestWaitEmbeddingResult_Timeout(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -444,7 +440,7 @@ func TestWaitEmbeddingResult_ContextCanceled(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	notifier := testutil.NewMockNotifier()
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, notifier, jobFile)
+	svc := NewEmbeddingService(m.Repo, notifier, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -466,7 +462,7 @@ func TestWaitEmbeddingResult_ContextCanceled(t *testing.T) {
 func TestReadEmbeddingResult_Completed(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -488,7 +484,7 @@ func TestReadEmbeddingResult_Completed(t *testing.T) {
 func TestReadEmbeddingResult_Failed(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -504,7 +500,7 @@ func TestReadEmbeddingResult_Failed(t *testing.T) {
 func TestReadEmbeddingResult_Pending(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -520,7 +516,7 @@ func TestReadEmbeddingResult_Pending(t *testing.T) {
 func TestReadEmbeddingResult_Processing(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -536,7 +532,7 @@ func TestReadEmbeddingResult_Processing(t *testing.T) {
 func TestReadEmbeddingResult_JobNotFound(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(
@@ -552,7 +548,7 @@ func TestReadEmbeddingResult_JobNotFound(t *testing.T) {
 func TestReadEmbeddingResult_ParseError(t *testing.T) {
 	m := testutil.NewTestMocks(t)
 	jobFile := newTestJobFileService(t)
-	svc := NewEmbeddingService(m.Repo, nil, jobFile)
+	svc := NewEmbeddingService(m.Repo, nil, jobFile, nil, nil)
 
 	jobID := uuid.New()
 	m.Job.EXPECT().GetJobState(gomock.Any(), jobID).Return(

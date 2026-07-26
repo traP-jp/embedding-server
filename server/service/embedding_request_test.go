@@ -37,11 +37,6 @@ func TestReadEmbeddingInput_TextMode(t *testing.T) {
 			want: "hello",
 		},
 		{
-			name:    "exceeds max chars",
-			text:    strings.Repeat("a", maxTextChars+1),
-			wantErr: ErrEmbeddingTextTooLong,
-		},
-		{
 			name: "boundary max chars",
 			text: strings.Repeat("a", maxTextChars),
 			want: strings.Repeat("a", maxTextChars),
@@ -120,17 +115,6 @@ func TestReadEmbeddingInput_ImagesMode(t *testing.T) {
 			wantErr:    ErrEmbeddingInputRequired,
 		},
 		{
-			name: "too many images",
-			parts: []multipartPart{
-				{name: "images", filename: "1.png", data: pngHeader},
-				{name: "images", filename: "2.png", data: pngHeader},
-				{name: "images", filename: "3.png", data: pngHeader},
-				{name: "images", filename: "4.png", data: pngHeader},
-				{name: "images", filename: "5.png", data: pngHeader},
-			},
-			wantErr: ErrEmbeddingTooManyImages,
-		},
-		{
 			name: "unsupported format",
 			parts: []multipartPart{
 				{name: "images", filename: "test.gif", data: []byte("GIF89a")},
@@ -142,7 +126,7 @@ func TestReadEmbeddingInput_ImagesMode(t *testing.T) {
 			parts: []multipartPart{
 				{name: "text", data: []byte("hello")},
 			},
-			wantErr: ErrEmbeddingTextNotAllowed,
+			wantErr: ErrEmbeddingInvalidMultipart,
 		},
 	}
 
@@ -230,13 +214,6 @@ func TestReadEmbeddingInput_MultimodalMode(t *testing.T) {
 			name:    "both empty",
 			parts:   []multipartPart{},
 			wantErr: ErrEmbeddingInputRequired,
-		},
-		{
-			name: "text exceeds limit",
-			parts: []multipartPart{
-				{name: "text", data: []byte(strings.Repeat("a", maxTextChars+1))},
-			},
-			wantErr: ErrEmbeddingTextTooLong,
 		},
 	}
 

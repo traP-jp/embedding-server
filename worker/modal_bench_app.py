@@ -3,8 +3,10 @@
 使い方:
   mise run modal-cost-bench
   # GPU を絞る例: BENCH_GPUS=A10 mise run modal-cost-bench
+  # OCR を切る例: BENCH_OCR_ENABLED=false mise run modal-cost-bench
 
 fixtures は benchmark/fixtures/ の画像を使う（先に fetch-traq-samples）。
+デフォルトは OCR あり（本番ジョブに近い経路）。
 """
 
 from __future__ import annotations
@@ -94,9 +96,9 @@ def _bench_worker_env(*, max_memory_cuda: str, torch_dtype: str) -> dict[str, st
         "BNB_4BIT_QUANT_TYPE": "nf4",
         "BNB_4BIT_USE_DOUBLE_QUANT": "true",
         "BNB_4BIT_COMPUTE_DTYPE": torch_dtype,
-        "OCR_ENABLED": "false",
-        "OCR_DEVICE": "cuda",
-        "OCR_SCALE": "2",
+        "OCR_ENABLED": os.environ.get("BENCH_OCR_ENABLED", "true"),
+        "OCR_DEVICE": os.environ.get("BENCH_OCR_DEVICE", "cuda"),
+        "OCR_SCALE": os.environ.get("BENCH_OCR_SCALE", "2"),
         "OCR_REC_THRESHOLD": "0.2",
         "OCR_DET_THRESHOLD": "0.2",
         "OCR_MAX_CHARS": "256",
@@ -171,69 +173,135 @@ def _run_benchmark(gpu: str) -> dict[str, Any]:
     from PIL import Image
 
     from embedding_engine import EmbeddingEngine
+    from ocr_engine import OcrEngine
     from worker_config import Config
 
     _configure_logging()
     log = logging.getLogger("modal-bench")
     images = _list_fixture_images(Path("/fixtures"))
     log.info(
-        "bench start gpu=%s images=%s max_pixels=%s dtype=%s",
+        "bench start gpu=%s images=%s batch_size=%s ocr=%s max_pixels=%s dtype=%s",
         gpu,
         len(images),
+        os.environ.get("EMBEDDING_BATCH_SIZE", "1"),
+        os.environ.get("OCR_ENABLED", "false"),
         os.environ.get("EMBEDDING_MAX_PIXELS"),
         os.environ.get("TORCH_DTYPE"),
     )
 
     wall_started = time.perf_counter()
-    load_started = time.perf_counter()
     config = Config()
-    embedder = EmbeddingEngine(config)
-    load_sec = time.perf_counter() - load_started
 
+    ocr_load_started = time.perf_counter()
+    ocr = OcrEngine(config)
+    ocr_load_sec = time.perf_counter() - ocr_load_started
+
+    embed_load_started = time.perf_counter()
+    embedder = EmbeddingEngine(config)
+    embed_load_sec = time.perf_counter() - embed_load_started
+    load_sec = ocr_load_sec + embed_load_sec
+
+    batch_size = max(1, config.embedding_batch_size)
     per_image: list[dict[str, Any]] = []
+    per_batch: list[dict[str, Any]] = []
     embed_total_sec = 0.0
+    ocr_total_sec = 0.0
+
+    # 本番と同様: 画像ごとに OCR → text 付き item を作り、その後バッチ推論。
+    prepared: list[tuple[Path, dict[str, Any], int, float, int]] = []
     for path in images:
         raw = path.read_bytes()
         pil = Image.open(BytesIO(raw)).convert("RGB")
+        ocr_started = time.perf_counter()
+        ocr_text = ocr.read_image_text(pil)
+        ocr_sec = time.perf_counter() - ocr_started
+        ocr_total_sec += ocr_sec
+        item: dict[str, Any] = {"image": [pil]}
+        if ocr_text:
+            item["text"] = [f"[OCR]\n{ocr_text}"]
+        prepared.append((path, item, len(raw), ocr_sec, len(ocr_text)))
+        log.info(
+            "bench ocr file=%s ocr_sec=%.3f chars=%s",
+            path.name,
+            ocr_sec,
+            len(ocr_text),
+        )
+
+    for batch_index in range(0, len(prepared), batch_size):
+        batch = prepared[batch_index : batch_index + batch_size]
+        items = [item for _, item, _, _, _ in batch]
         started = time.perf_counter()
-        vector = embedder.embed({"image": [pil]})
+        vectors = embedder.embed_many(items)
         elapsed = time.perf_counter() - started
         embed_total_sec += elapsed
-        per_image.append(
+        per_item_sec = elapsed / len(batch)
+        per_batch.append(
             {
-                "file": path.name,
-                "bytes": len(raw),
+                "batch_index": batch_index // batch_size,
+                "size": len(batch),
                 "embed_sec": round(elapsed, 3),
-                "dim": len(vector),
+                "embed_sec_per_image": round(per_item_sec, 3),
             }
         )
-        log.info("bench image file=%s embed_sec=%.3f dim=%s", path.name, elapsed, len(vector))
+        for (path, _, nbytes, ocr_sec, ocr_chars), vector in zip(batch, vectors, strict=True):
+            per_image.append(
+                {
+                    "file": path.name,
+                    "bytes": nbytes,
+                    "ocr_sec": round(ocr_sec, 3),
+                    "ocr_chars": ocr_chars,
+                    "embed_sec": round(per_item_sec, 3),
+                    "batch_embed_sec": round(elapsed, 3),
+                    "dim": len(vector),
+                }
+            )
+        log.info(
+            "bench batch index=%s size=%s embed_sec=%.3f per_image_sec=%.3f",
+            batch_index // batch_size,
+            len(batch),
+            elapsed,
+            per_item_sec,
+        )
 
     total_sec = time.perf_counter() - wall_started
     rate = GPU_USD_PER_SEC.get(gpu)
     est_usd = None if rate is None else total_sec * rate
     est_jpy = None if est_usd is None else est_usd * JPY_PER_USD
     embed_secs = [row["embed_sec"] for row in per_image]
+    ocr_secs = [row["ocr_sec"] for row in per_image]
+    batch_secs = [row["embed_sec"] for row in per_batch]
     result = {
         "gpu": gpu,
         "torch_dtype": config.torch_dtype,
         "bnb_compute_dtype": config.bnb_4bit_compute_dtype,
         "quantization": config.quantization,
         "embedding_max_pixels": config.embedding_max_pixels,
+        "embedding_batch_size": batch_size,
+        "ocr_enabled": config.ocr_enabled,
         "image_count": len(images),
+        "batch_count": len(per_batch),
+        "ocr_load_sec": round(ocr_load_sec, 3),
+        "embed_load_sec": round(embed_load_sec, 3),
         "load_sec": round(load_sec, 3),
+        "ocr_total_sec": round(ocr_total_sec, 3),
+        "ocr_mean_sec": round(sum(ocr_secs) / len(ocr_secs), 3),
         "embed_total_sec": round(embed_total_sec, 3),
-        "embed_mean_sec": round(sum(embed_secs) / len(embed_secs), 3),
-        "embed_min_sec": round(min(embed_secs), 3),
-        "embed_max_sec": round(max(embed_secs), 3),
+        "embed_mean_sec_per_image": round(sum(embed_secs) / len(embed_secs), 3),
+        "embed_mean_sec_per_batch": round(sum(batch_secs) / len(batch_secs), 3),
+        "embed_min_sec_per_batch": round(min(batch_secs), 3),
+        "embed_max_sec_per_batch": round(max(batch_secs), 3),
         "total_sec": round(total_sec, 3),
         "gpu_usd_per_sec": rate,
         "est_cost_usd": None if est_usd is None else round(est_usd, 4),
         "est_cost_jpy": None if est_jpy is None else round(est_jpy, 1),
         "note": "est_cost は公開単価×コンテナ内 wall 秒の概算。確定値は modal billing report で確認。",
+        "per_batch": per_batch,
         "per_image": per_image,
     }
-    log.info("bench done %s", json.dumps({k: v for k, v in result.items() if k != "per_image"}))
+    log.info(
+        "bench done %s",
+        json.dumps({k: v for k, v in result.items() if k not in {"per_image", "per_batch"}}),
+    )
     return result
 
 
@@ -295,11 +363,11 @@ def main(gpus: str = "") -> None:
         print(f"=== bench gpu={gpu} ===")
         result = runners[gpu].remote()
         results.append(result)
-        summary = {k: v for k, v in result.items() if k != "per_image"}
+        summary = {k: v for k, v in result.items() if k not in {"per_image", "per_batch"}}
         print(json.dumps(summary, ensure_ascii=False, indent=2))
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RESULTS_DIR / "modal-cost-bench-results.json"
+    out = RESULTS_DIR / "modal-cost-bench-ocr-results.json"
     out.write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {out}")
     print("Confirm actual spend with: modal billing report --for today --show-resources")

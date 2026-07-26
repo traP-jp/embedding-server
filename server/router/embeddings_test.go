@@ -23,7 +23,7 @@ func TestPostEmbeddingsText_Success(t *testing.T) {
 	s := setupTest(t)
 
 	s.cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	s.job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 
 	idCh := make(chan uuid.UUID, 1)
 	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -87,7 +87,7 @@ func TestPostEmbeddingsText_JobsFull(t *testing.T) {
 	s := setupTest(t)
 
 	s.cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(30, nil)
+	s.job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(30, nil)
 
 	body := `{"text":"hello"}`
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/text", "application/json", strings.NewReader(body))
@@ -105,7 +105,7 @@ func TestPostEmbeddingsText_InternalError(t *testing.T) {
 	s := setupTest(t)
 
 	s.cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
+	s.job.EXPECT().CountPendingTextJobs(gomock.Any()).Return(0, nil)
 	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	dbErr := errors.New("database connection lost")
@@ -151,37 +151,14 @@ func TestPostEmbeddingsImages_Success(t *testing.T) {
 		"images": pngHeader,
 	})
 
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-
-	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input repository.CreateJobInput) error {
-			idCh <- input.ID
-			return nil
-		},
-	)
-
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
-			return repository.JobState{
-				Status: model.StatusCompleted,
-				Result: json.RawMessage(`{"vector":[0.3]}`),
-			}, nil
-		},
-	).AnyTimes()
-
-	go func() {
-		id := <-idCh
-		time.Sleep(100 * time.Millisecond)
-		s.notifier.Notify(id)
-	}()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
 
-	assertStatus(t, rec, http.StatusOK)
+	assertStatus(t, rec, http.StatusAccepted)
 	respBody := assertJSONBody(t, rec)
-	if _, ok := respBody["vector"]; !ok {
-		t.Fatal("expected vector in response")
+	if _, ok := respBody["id"]; !ok {
+		t.Fatal("expected id in response")
 	}
 }
 
@@ -262,22 +239,6 @@ func TestPostEmbeddingsImages_ImageTooLarge(t *testing.T) {
 	assertErrorMessageContains(t, rec, "maximum string length is 20971520")
 }
 
-func TestPostEmbeddingsImages_JobsFull(t *testing.T) {
-	s := setupTest(t)
-
-	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	body, contentType := buildMultipartBodyWithBytes(t, nil, map[string][]byte{
-		"images": pngHeader,
-	})
-
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(30, nil)
-
-	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
-
-	assertStatus(t, rec, http.StatusServiceUnavailable)
-	assertRetryAfter(t, rec, 30)
-}
-
 func TestPostEmbeddingsImages_InternalError(t *testing.T) {
 	s := setupTest(t)
 
@@ -286,13 +247,7 @@ func TestPostEmbeddingsImages_InternalError(t *testing.T) {
 		"images": pngHeader,
 	})
 
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
-
-	dbErr := errors.New("database connection lost")
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
-		repository.JobState{}, dbErr,
-	).AnyTimes()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(errors.New("database connection lost"))
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/images", contentType, body)
 
@@ -312,37 +267,14 @@ func TestPostEmbeddingsMultimodal_Success(t *testing.T) {
 		"images": pngHeader,
 	})
 
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-
-	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input repository.CreateJobInput) error {
-			idCh <- input.ID
-			return nil
-		},
-	)
-
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
-			return repository.JobState{
-				Status: model.StatusCompleted,
-				Result: json.RawMessage(`{"vector":[0.4]}`),
-			}, nil
-		},
-	).AnyTimes()
-
-	go func() {
-		id := <-idCh
-		time.Sleep(100 * time.Millisecond)
-		s.notifier.Notify(id)
-	}()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 
-	assertStatus(t, rec, http.StatusOK)
+	assertStatus(t, rec, http.StatusAccepted)
 	respBody := assertJSONBody(t, rec)
-	if _, ok := respBody["vector"]; !ok {
-		t.Fatal("expected vector in response")
+	if _, ok := respBody["id"]; !ok {
+		t.Fatal("expected id in response")
 	}
 }
 
@@ -353,35 +285,11 @@ func TestPostEmbeddingsMultimodal_TextOnly(t *testing.T) {
 		"text": []byte("hello"),
 	}, nil)
 
-	s.cache.EXPECT().GetTextCache(gomock.Any(), "hello").Return(nil, repository.ErrCacheNotFound)
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-
-	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input repository.CreateJobInput) error {
-			idCh <- input.ID
-			return nil
-		},
-	)
-
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
-			return repository.JobState{
-				Status: model.StatusCompleted,
-				Result: json.RawMessage(`{"vector":[0.5]}`),
-			}, nil
-		},
-	).AnyTimes()
-
-	go func() {
-		id := <-idCh
-		time.Sleep(100 * time.Millisecond)
-		s.notifier.Notify(id)
-	}()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 
-	assertStatus(t, rec, http.StatusOK)
+	assertStatus(t, rec, http.StatusAccepted)
 }
 
 func TestPostEmbeddingsMultimodal_ImagesOnly(t *testing.T) {
@@ -392,34 +300,11 @@ func TestPostEmbeddingsMultimodal_ImagesOnly(t *testing.T) {
 		"images": pngHeader,
 	})
 
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-
-	idCh := make(chan uuid.UUID, 1)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input repository.CreateJobInput) error {
-			idCh <- input.ID
-			return nil
-		},
-	)
-
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx interface{}, id uuid.UUID) (repository.JobState, error) {
-			return repository.JobState{
-				Status: model.StatusCompleted,
-				Result: json.RawMessage(`{"vector":[0.6]}`),
-			}, nil
-		},
-	).AnyTimes()
-
-	go func() {
-		id := <-idCh
-		time.Sleep(100 * time.Millisecond)
-		s.notifier.Notify(id)
-	}()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 
-	assertStatus(t, rec, http.StatusOK)
+	assertStatus(t, rec, http.StatusAccepted)
 }
 
 func TestPostEmbeddingsMultimodal_BothEmpty(t *testing.T) {
@@ -447,24 +332,6 @@ func TestPostEmbeddingsMultimodal_TextTooLong(t *testing.T) {
 	assertErrorMessageContains(t, rec, "maximum string length is 8192")
 }
 
-func TestPostEmbeddingsMultimodal_JobsFull(t *testing.T) {
-	s := setupTest(t)
-
-	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	body, contentType := buildMultipartBodyWithBytes(t, map[string][]byte{
-		"text": []byte("hello"),
-	}, map[string][]byte{
-		"images": pngHeader,
-	})
-
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(30, nil)
-
-	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
-
-	assertStatus(t, rec, http.StatusServiceUnavailable)
-	assertRetryAfter(t, rec, 30)
-}
-
 func TestPostEmbeddingsMultimodal_InternalError(t *testing.T) {
 	s := setupTest(t)
 
@@ -475,13 +342,7 @@ func TestPostEmbeddingsMultimodal_InternalError(t *testing.T) {
 		"images": pngHeader,
 	})
 
-	s.job.EXPECT().CountPendingJobs(gomock.Any()).Return(0, nil)
-	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(nil)
-
-	dbErr := errors.New("database connection lost")
-	s.job.EXPECT().GetJobState(gomock.Any(), gomock.Any()).Return(
-		repository.JobState{}, dbErr,
-	).AnyTimes()
+	s.job.EXPECT().CreateJob(gomock.Any(), gomock.Any()).Return(errors.New("database connection lost"))
 
 	rec := s.doRequest(t, http.MethodPost, "/v1/embeddings/multimodal", contentType, body)
 

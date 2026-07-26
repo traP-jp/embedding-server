@@ -16,7 +16,7 @@ import (
 
 func (r *Repository) GetJob(ctx context.Context, id uuid.UUID) (*repository.JobRecord, error) {
 	job, err := gorm.G[model.EmbeddingJob](r.db).
-		Select("id", "text").
+		Select("id", "text", "webhook_url", "kind").
 		Where("id = ?", id).
 		First(ctx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -33,16 +33,24 @@ func (r *Repository) GetJob(ctx context.Context, id uuid.UUID) (*repository.JobR
 	return &repository.JobRecord{
 		ID:              job.ID,
 		Text:            job.Text,
+		WebhookURL:      job.WebhookURL,
+		Kind:            job.Kind,
 		ImageObjectKeys: keys,
 	}, nil
 }
 
 func (r *Repository) CreateJob(ctx context.Context, input repository.CreateJobInput) error {
+	if input.Kind == "" {
+		return errors.New("job kind is required")
+	}
+
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := gorm.G[model.EmbeddingJob](tx).Create(ctx, &model.EmbeddingJob{
-			ID:     input.ID,
-			Text:   input.Text,
-			Status: model.StatusPending,
+			ID:         input.ID,
+			Text:       input.Text,
+			WebhookURL: input.WebhookURL,
+			Kind:       input.Kind,
+			Status:     model.StatusPending,
 		}); err != nil {
 			return err
 		}
@@ -63,12 +71,35 @@ func (r *Repository) CreateJob(ctx context.Context, input repository.CreateJobIn
 	})
 }
 
-func (r *Repository) ClaimJob(ctx context.Context) (*repository.JobRecord, error) {
-	job, err := gorm.G[model.EmbeddingJob](r.db).
-		Select("id", "text").
-		Where("status = ?", model.StatusPending).
-		Order("created_at ASC, id ASC").
-		First(ctx)
+func (r *Repository) ClaimJob(ctx context.Context, filter repository.ClaimJobFilter) (*repository.JobRecord, error) {
+	wantText := filter.Has(model.JobKindText)
+	wantImage := filter.Has(model.JobKindImage)
+	if !wantText && !wantImage {
+		return nil, repository.ErrNoJob
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("embedding_jobs").
+		Select("embedding_jobs.id", "embedding_jobs.text", "embedding_jobs.webhook_url", "embedding_jobs.kind").
+		Where("embedding_jobs.status = ?", model.StatusPending)
+
+	switch {
+	case wantText && !wantImage:
+		query = query.Where("embedding_jobs.kind = ?", model.JobKindText)
+	case !wantText && wantImage:
+		query = query.Where("embedding_jobs.kind = ?", model.JobKindImage)
+	}
+
+	order := "embedding_jobs.created_at ASC, embedding_jobs.id ASC"
+	if wantText && wantImage {
+		// text を優先し、同種内は FIFO。
+		// modal にはtextを 優先して処理させる
+		order = "CASE embedding_jobs.kind WHEN 'text' THEN 0 WHEN 'image' THEN 1 ELSE 2 END ASC, " + order
+	}
+	query = query.Order(order)
+
+	var job model.EmbeddingJob
+	err := query.Limit(1).Take(&job).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, repository.ErrNoJob
 	}
@@ -95,6 +126,8 @@ func (r *Repository) ClaimJob(ctx context.Context) (*repository.JobRecord, error
 	return &repository.JobRecord{
 		ID:              job.ID,
 		Text:            job.Text,
+		WebhookURL:      job.WebhookURL,
+		Kind:            job.Kind,
 		ImageObjectKeys: keys,
 	}, nil
 }
@@ -150,11 +183,40 @@ func (r *Repository) FailJob(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *Repository) CountPendingJobs(ctx context.Context) (int, error) {
+func (r *Repository) CountPendingTextJobs(ctx context.Context) (int, error) {
 	count, err := gorm.G[model.EmbeddingJob](r.db).
-		Where("status = ?", model.StatusPending).
+		Where("status = ? AND kind = ?", model.StatusPending, model.JobKindText).
 		Count(ctx, "id")
 	return int(count), err
+}
+
+func (r *Repository) CountPendingImageJobs(ctx context.Context) (int, error) {
+	count, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("status = ? AND kind = ?", model.StatusPending, model.JobKindImage).
+		Count(ctx, "id")
+	return int(count), err
+}
+
+func (r *Repository) CountProcessingImageJobs(ctx context.Context) (int, error) {
+	count, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("status = ? AND kind = ?", model.StatusProcessing, model.JobKindImage).
+		Count(ctx, "id")
+	return int(count), err
+}
+
+// ReclaimStaleProcessingJobs は更新が古い processing ジョブを pending に戻す。
+// Modal timeout / crash 後に claim 済みのまま残ったジョブを再処理可能にする。
+func (r *Repository) ReclaimStaleProcessingJobs(ctx context.Context, ttl time.Duration) (int64, error) {
+	if ttl <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().Add(-ttl)
+	n, err := gorm.G[model.EmbeddingJob](r.db).
+		Where("status = ? AND updated_at < ?", model.StatusProcessing, cutoff).
+		Updates(ctx, model.EmbeddingJob{
+			Status: model.StatusPending,
+		})
+	return int64(n), err
 }
 
 func (r *Repository) ExpiredJobImageKeys(ctx context.Context, ttl time.Duration) ([]string, error) {
