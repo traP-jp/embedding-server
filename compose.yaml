@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: embedding-api
     ports:
-      - "${API_PORT:-8080}:${API_PORT:-8080}"
+      - "127.0.0.1:${API_PORT:-8080}:${API_PORT:-8080}"
     env_file:
       - .env
     volumes:
@@ -14,6 +14,22 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  cloudflared:
+    profiles:
+      - tunnel
+    image: cloudflare/cloudflared:2026.8.3
+    container_name: embedding-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
 
   postgres:
     image: postgres:${POSTGRES_VERSION:-18.3}

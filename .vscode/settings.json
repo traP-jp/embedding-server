@@ -1,0 +1,11 @@
+{
+  "mise.configureExtensionsAutomatically": true,
+  "mise.configureExtensionsUseSymLinks": true,
+  "mise.configureExtensionsIncludeGlobalTools": false,
+  "go.alternateTools": {
+    "go": "${workspaceFolder}/.vscode/mise-tools/go",
+    "dlv": "${workspaceFolder}/.vscode/mise-tools/dlv",
+    "gopls": "${workspaceFolder}/.vscode/mise-tools/gopls"
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/.vscode/mise-tools/python"
+}

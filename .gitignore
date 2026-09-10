@@ -23,3 +23,5 @@ AGENTS.md
 benchmark/fixtures/**
 !benchmark/fixtures/.gitkeep
 benchmark/modal-cost-bench-results.json
+
+.vscode/mise-tools
