@@ -153,6 +153,12 @@ func (s *EmbeddingService) enqueueJob(ctx context.Context, input EmbeddingInput)
 		slog.Warn("embedding create rejected", slog.String("reason", "empty_input"))
 		return uuid.Nil, ErrEmbeddingInputRequired
 	}
+	if input.WebhookURL != "" {
+		if err := s.webhook.ValidateURL(input.WebhookURL); err != nil {
+			slog.Warn("embedding create rejected", slog.String("reason", "invalid_webhook_url"), slog.Any("error", err))
+			return uuid.Nil, err
+		}
+	}
 
 	id := uuid.New()
 	imageObjectKeys, err := s.jobFile.StoreJobImages(ctx, id, input.Images)

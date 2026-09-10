@@ -12,7 +12,8 @@ class Config(BaseSettings):
         frozen=True,
     )
 
-    api_key: str = Field(default="", validation_alias="API_KEY")
+    auth_disabled: bool = Field(default=False, validation_alias="AUTH_DISABLED")
+    internal_api_key: str = Field(default="", validation_alias="INTERNAL_API_KEY")
     api_mode: str = Field(validation_alias="WORKER_API_MODE")
     api_base_url_override: str = Field(default="", validation_alias="API_BASE_URL")
     api_host: str = Field(default="", validation_alias="API_HOST")
@@ -49,6 +50,10 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def validate_api_config(self) -> "Config":
+        if not self.auth_disabled and not self.internal_api_key:
+            raise ValueError("INTERNAL_API_KEY must not be empty when authentication is enabled")
+        if self.internal_api_key != self.internal_api_key.strip():
+            raise ValueError("INTERNAL_API_KEY must not have surrounding whitespace")
         if self.api_mode not in {"host", "url"}:
             raise ValueError("WORKER_API_MODE must be one of host, url")
         if self.api_mode == "url":

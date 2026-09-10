@@ -45,7 +45,7 @@ func main() {
 	modalTrigger := service.NewModalTrigger(service.ModalTriggerConfig{
 		Enable:         cfg.Modal.Enable,
 		URL:            cfg.Modal.TriggerURL,
-		Token:          cfg.APIKey,
+		APIKey:         cfg.InternalAPIKey,
 		BatchThreshold: cfg.Modal.BatchThreshold,
 		MinInterval:    cfg.Modal.MinInterval,
 		TriggerTimeout: cfg.Modal.TriggerTimeout,
@@ -63,7 +63,11 @@ func main() {
 	go modalTrigger.RunReclaimLoop(ctx)
 
 	e := echo.New()
-	if err := router.UseMiddleware(e, cfg.APIKey); err != nil {
+	if err := router.UseMiddleware(e, router.APIKeyAuthConfig{
+		ExternalAPIKey: cfg.APIKey,
+		InternalAPIKey: cfg.InternalAPIKey,
+		Disabled:       cfg.AuthDisabled,
+	}); err != nil {
 		slog.Error("failed to configure middleware", slog.Any("error", err))
 		os.Exit(1)
 	}

@@ -8,16 +8,20 @@ info:
     マルチモーダル埋め込み用のジョブ管理 API。
     テキストは同期、画像・multimodal は非同期（202 + job id / webhook / GET）。
     同一テキストの埋め込み結果はサーバー内部でキャッシュされる。
+    公開 API は API_KEY、/internal は INTERNAL_API_KEY を Bearer token として送る。
 
 servers:
   - url: http://localhost:8080
     description: 開発環境
 
+security:
+  - ExternalBearerAuth: []
+
 tags:
   - name: embeddings
-    description: テキスト・画像・テキスト＋画像から埋め込みジョブを作成する
+    description: API_KEY で認証し、テキスト・画像・テキスト＋画像から埋め込みジョブを作成する
   - name: internal-worker
-    description: 内部で動いているワーカー用
+    description: INTERNAL_API_KEY で認証するワーカー用
 
 paths:
   /v1/embeddings/text:
@@ -51,6 +55,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "503":
           description: ジョブを受け付けられません。しばらく待ってから再送してください
           headers:
@@ -113,6 +119,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           description: サーバー内部エラー
           content:
@@ -161,6 +169,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           description: サーバー内部エラー
           content:
@@ -188,6 +198,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           description: サーバー内部エラー
           content:
@@ -197,6 +209,8 @@ paths:
 
   /internal/worker/jobs/claim:
     post:
+      security:
+        - InternalBearerAuth: []
       operationId: claimWorkerJob
       tags: [internal-worker]
       summary: 次の pending ジョブをロックして取得
@@ -232,6 +246,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           description: サーバー内部エラー
           content:
@@ -241,6 +257,8 @@ paths:
 
   /internal/worker/jobs/{id}/complete:
     post:
+      security:
+        - InternalBearerAuth: []
       operationId: completeWorkerJob
       tags: [internal-worker]
       summary: ジョブを完了にする
@@ -268,6 +286,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: 指定したジョブが見つかりません
           content:
@@ -283,6 +303,8 @@ paths:
 
   /internal/worker/jobs/{id}/fail:
     post:
+      security:
+        - InternalBearerAuth: []
       operationId: failWorkerJob
       tags: [internal-worker]
       summary: ジョブを失敗にする
@@ -297,6 +319,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: 指定したジョブが見つかりません
           content:
@@ -311,6 +335,14 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  securitySchemes:
+    ExternalBearerAuth:
+      type: http
+      scheme: bearer
+    InternalBearerAuth:
+      type: http
+      scheme: bearer
+
   parameters:
     JobId:
       name: id
@@ -322,6 +354,17 @@ components:
   responses:
     NoContent:
       description: No Content
+    Unauthorized:
+      description: API key is missing or invalid
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: Bearer authentication challenge
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
     ErrorResponse:

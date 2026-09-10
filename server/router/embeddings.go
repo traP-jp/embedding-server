@@ -59,6 +59,8 @@ func (h *Handlers) PostEmbeddingsImages(ctx context.Context, req api.PostEmbeddi
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsImages202JSONResponse{Id: id}, nil
+	case errors.Is(err, service.ErrWebhookURLInvalid):
+		return api.PostEmbeddingsImages400JSONResponse{Message: "invalid webhook URL"}, nil
 	default:
 		slog.ErrorContext(ctx, "create embedding job", slog.Any("error", err))
 		return api.PostEmbeddingsImages500JSONResponse{Message: "internal error"}, nil
@@ -85,6 +87,8 @@ func (h *Handlers) PostEmbeddingsMultimodal(ctx context.Context, req api.PostEmb
 	switch {
 	case err == nil:
 		return api.PostEmbeddingsMultimodal202JSONResponse{Id: id}, nil
+	case errors.Is(err, service.ErrWebhookURLInvalid):
+		return api.PostEmbeddingsMultimodal400JSONResponse{Message: "invalid webhook URL"}, nil
 	default:
 		slog.ErrorContext(ctx, "create embedding job", slog.Any("error", err))
 		return api.PostEmbeddingsMultimodal500JSONResponse{Message: "internal error"}, nil

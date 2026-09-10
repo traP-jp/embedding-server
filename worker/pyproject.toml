@@ -5,6 +5,7 @@ description = "Embedding queue worker (ROCm / PyTorch image at runtime)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "boto3>=1.42.0,<2",
+    "fastapi>=0.115.0,<1",
     "httpx>=0.28.0,<1",
     "pillow>=10.0.0",
     "pydantic-settings>=2,<3",
@@ -35,6 +36,7 @@ py-modules = [
     "ocr_engine",
     "worker_object_store",
     "worker_api",
+    "worker_auth",
     "worker_config",
 ]
 packages = ["scripts"]

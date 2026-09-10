@@ -11,7 +11,7 @@ import (
 type ModalTriggerConfig struct {
 	Enable         bool
 	URL            string
-	Token          string
+	APIKey         string
 	BatchThreshold int
 	MinInterval    time.Duration
 	TriggerTimeout time.Duration
@@ -43,7 +43,7 @@ func NewModalTrigger(cfg ModalTriggerConfig, repo modalTriggerRepo) *ModalTrigge
 }
 
 func (t *ModalTrigger) Enabled() bool {
-	return t != nil && t.cfg.Enable && t.cfg.URL != "" && t.cfg.Token != ""
+	return t != nil && t.cfg.Enable && t.cfg.URL != "" && t.cfg.APIKey != ""
 }
 
 // MaybeTrigger は pending 画像ジョブが閾値以上なら Modal を起動する（非同期）。
@@ -87,10 +87,7 @@ func (t *ModalTrigger) MaybeTrigger(ctx context.Context) {
 			slog.ErrorContext(ctx, "modal trigger request build failed", slog.Any("error", err))
 			return
 		}
-		// run_batch は query ?token= で認証（API_KEY と同じ値）
-		q := req.URL.Query()
-		q.Set("token", t.cfg.Token)
-		req.URL.RawQuery = q.Encode()
+		req.Header.Set("Authorization", "Bearer "+t.cfg.APIKey)
 		resp, err := t.client.Do(req)
 		if err != nil {
 			slog.WarnContext(ctx, "modal trigger failed", slog.Any("error", err))

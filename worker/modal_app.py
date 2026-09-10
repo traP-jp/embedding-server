@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import fastapi
 import modal
 
 APP_NAME = "embedding-worker"
@@ -129,7 +130,7 @@ worker_secret = modal.Secret.from_name(
         "OCR_DET_THRESHOLD",
         "OCR_MAX_CHARS",
         "OCR_VISUALIZE",
-        "API_KEY",
+        "INTERNAL_API_KEY",
     ],
 )
 
@@ -163,7 +164,7 @@ def _load_api() -> Any:
     from worker_api import ApiClient
 
     config = _load_config()
-    _api = ApiClient(config.api_base_url, config.api_key)
+    _api = ApiClient(config.api_base_url, config.internal_api_key)
     return _api
 
 
@@ -271,7 +272,11 @@ def _process_queue_impl(max_jobs: int, run_seconds: int) -> int:
 
 # Go から閾値到達時に叩く薄い起動口。GPU は使わず process_queue を spawn するだけ。
 # fastapi_endpoint は関数ごとに固定 URL を出す（ASGI の POST リダイレクト問題を避ける）。
-trigger_image = modal.Image.debian_slim(python_version="3.12").uv_pip_install("fastapi[standard]>=0.115.0")
+trigger_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .uv_pip_install("fastapi[standard]>=0.115.0")
+    .add_local_python_source("worker_auth")
+)
 
 
 @app.function(
@@ -281,14 +286,20 @@ trigger_image = modal.Image.debian_slim(python_version="3.12").uv_pip_install("f
     scaledown_window=10,
 )
 @modal.fastapi_endpoint(method="POST")
-def run_batch(token: str = "") -> dict[str, Any]:
-    import fastapi
+def run_batch(request: fastapi.Request) -> dict[str, Any]:
+    from worker_auth import internal_api_key, valid_bearer_token
 
-    expected = os.environ.get("API_KEY", "").strip()
+    expected = internal_api_key()
     if not expected:
-        raise fastapi.HTTPException(status_code=500, detail="API_KEY is not configured")
-    if token != expected:
-        raise fastapi.HTTPException(status_code=401, detail="unauthorized")
+        raise fastapi.HTTPException(status_code=500, detail="INTERNAL_API_KEY is not configured")
+
+    authorization = request.headers.get("Authorization", "")
+    if not valid_bearer_token(authorization, expected):
+        raise fastapi.HTTPException(
+            status_code=401,
+            detail="unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     call = process_queue.spawn()  # デフォルトでキュー空までドレイン
     return {"status": "started", "call_id": call.object_id}

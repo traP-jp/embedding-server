@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
@@ -9,25 +10,30 @@ import (
 
 	"embedding-server/api/api"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/labstack/echo/v5"
 	mid "github.com/labstack/echo/v5/middleware"
 	echomiddleware "github.com/oapi-codegen/echo-v5-middleware"
 )
 
-// UseMiddleware は共通 HTTP ミドルウェア（リクエストログ・API キー認証・OpenAPI 検証）を登録する。
-func UseMiddleware(e *echo.Echo, apiKey string) error {
+type APIKeyAuthConfig struct {
+	ExternalAPIKey string
+	InternalAPIKey string
+	Disabled       bool
+}
+
+// UseMiddleware は共通 HTTP ミドルウェア（リクエストログ・認証・OpenAPI 検証）を登録する。
+func UseMiddleware(e *echo.Echo, auth APIKeyAuthConfig) error {
 	e.Use(mid.RequestLoggerWithConfig(mid.RequestLoggerConfig{
-		LogLatency:   true,
-		LogMethod:    true,
-		LogURI:       true,
-		LogStatus:    true,
-		LogRemoteIP:  true,
-		LogRequestID: true,
-		HandleError:  true,
+		LogLatency:    true,
+		LogMethod:     true,
+		LogURI:        true,
+		LogStatus:     true,
+		LogRemoteIP:   true,
+		LogRequestID:  true,
+		HandleError:   true,
 		LogValuesFunc: requestLogValues,
 	}))
-
-	e.Use(apiKeyAuth(apiKey))
 
 	swagger, err := api.GetSpec()
 	if err != nil {
@@ -35,28 +41,46 @@ func UseMiddleware(e *echo.Echo, apiKey string) error {
 	}
 	e.Use(echomiddleware.OapiRequestValidatorWithOptions(swagger, &echomiddleware.Options{
 		DoNotValidateServers: true,
+		Options:              openapi3filter.Options{AuthenticationFunc: apiKeyAuthenticationFunc(auth)},
 	}))
 	return nil
 }
 
-func apiKeyAuth(apiKey string) echo.MiddlewareFunc {
-	expected := []byte(apiKey)
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			got := requestAPIKey(c.Request())
-			if subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
-			}
-			return next(c)
+func apiKeyAuthenticationFunc(cfg APIKeyAuthConfig) openapi3filter.AuthenticationFunc {
+	externalExpected := []byte(cfg.ExternalAPIKey)
+	internalExpected := []byte(cfg.InternalAPIKey)
+	return func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
+		if cfg.Disabled {
+			return nil
 		}
+
+		var expected []byte
+		switch input.SecuritySchemeName {
+		case "ExternalBearerAuth":
+			expected = externalExpected
+		case "InternalBearerAuth":
+			expected = internalExpected
+		default:
+			return fmt.Errorf("unsupported security scheme: %s", input.SecuritySchemeName)
+		}
+
+		got := requestAPIKey(input.RequestValidationInput.Request)
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
+			if c := echomiddleware.GetEchoContext(ctx); c != nil {
+				c.Response().Header().Set("WWW-Authenticate", "Bearer")
+			}
+			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+		}
+		return nil
 	}
 }
 
 func requestAPIKey(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	parts := strings.Fields(r.Header.Get("Authorization"))
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return parts[1]
 	}
-	return strings.TrimSpace(r.Header.Get("X-API-Key"))
+	return ""
 }
 
 func requestLogValues(_ *echo.Context, v mid.RequestLoggerValues) error {

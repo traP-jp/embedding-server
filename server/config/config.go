@@ -2,19 +2,23 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
 )
 
 type Config struct {
-	AppEnv  string `envconfig:"APP_ENV" required:"true"`
-	APIPort string `envconfig:"API_PORT" required:"true"`
-	// APIKey は公開 API・/internal・webhook 送信・Modal 起動で共有する秘密。
-	APIKey   string   `envconfig:"API_KEY" required:"true"`
-	Database DBConfig `envconfig:"POSTGRES"`
-	S3       S3Config `envconfig:"S3"`
-	Modal    ModalConfig
+	AppEnv       string `envconfig:"APP_ENV" required:"true"`
+	APIPort      string `envconfig:"API_PORT" required:"true"`
+	AuthDisabled bool   `envconfig:"AUTH_DISABLED" default:"false"`
+	// APIKey はクライアントからの公開 API 認証と webhook 送信に使う秘密。
+	APIKey string `envconfig:"API_KEY"`
+	// InternalAPIKey は worker の /internal 認証と Modal 起動に使う秘密。
+	InternalAPIKey string   `envconfig:"INTERNAL_API_KEY"`
+	Database       DBConfig `envconfig:"POSTGRES"`
+	S3             S3Config `envconfig:"S3"`
+	Modal          ModalConfig
 }
 
 type ModalConfig struct {
@@ -58,6 +62,25 @@ func Load() (Config, error) {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
 		return Config{}, fmt.Errorf("load config from environment: %w", err)
+	}
+	cfg.AppEnv = strings.TrimSpace(cfg.AppEnv)
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	cfg.InternalAPIKey = strings.TrimSpace(cfg.InternalAPIKey)
+
+	if cfg.AuthDisabled {
+		if strings.EqualFold(cfg.AppEnv, "production") {
+			return Config{}, fmt.Errorf("AUTH_DISABLED must not be true in production")
+		}
+		return cfg, nil
+	}
+	if cfg.APIKey == "" {
+		return Config{}, fmt.Errorf("API_KEY must not be empty when authentication is enabled")
+	}
+	if cfg.InternalAPIKey == "" {
+		return Config{}, fmt.Errorf("INTERNAL_API_KEY must not be empty when authentication is enabled")
+	}
+	if cfg.APIKey == cfg.InternalAPIKey {
+		return Config{}, fmt.Errorf("API_KEY and INTERNAL_API_KEY must be different")
 	}
 
 	return cfg, nil

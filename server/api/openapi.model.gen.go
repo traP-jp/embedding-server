@@ -11,6 +11,11 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+const (
+	ExternalBearerAuthScopes externalBearerAuthContextKey = "ExternalBearerAuth.Scopes"
+	InternalBearerAuthScopes internalBearerAuthContextKey = "InternalBearerAuth.Scopes"
+)
+
 // Defines values for EmbeddingJobStatusStatus.
 const (
 	Completed  EmbeddingJobStatusStatus = "completed"
@@ -123,6 +128,15 @@ type WorkerJobPayload struct {
 	// 1〜8192 文字。空文字は不可。
 	Text *EmbeddingText `json:"text,omitempty"`
 }
+
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = ErrorResponse
+
+// externalBearerAuthContextKey is the context key for ExternalBearerAuth security scheme
+type externalBearerAuthContextKey string
+
+// internalBearerAuthContextKey is the context key for InternalBearerAuth security scheme
+type internalBearerAuthContextKey string
 
 // CompleteWorkerJobJSONBody defines parameters for CompleteWorkerJob.
 type CompleteWorkerJobJSONBody struct {

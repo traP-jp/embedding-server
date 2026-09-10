@@ -47,7 +47,7 @@ func setupTest(t *testing.T) *testSetup {
 	repo := &testCombinedRepo{job: jobMock, cache: cacheMock}
 
 	e := echo.New()
-	if err := UseMiddleware(e, ""); err != nil {
+	if err := UseMiddleware(e, APIKeyAuthConfig{Disabled: true}); err != nil {
 		t.Fatalf("configure middleware: %v", err)
 	}
 	notifier := service.NewLocalJobNotifier()

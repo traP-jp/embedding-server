@@ -55,6 +55,8 @@ type ServerInterfaceWrapper struct {
 func (w *ServerInterfaceWrapper) ClaimWorkerJob(ctx *echo.Context) error {
 	var err error
 
+	ctx.Set(string(InternalBearerAuthScopes), []string{})
+
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ClaimWorkerJob(ctx)
 	return err
@@ -70,6 +72,8 @@ func (w *ServerInterfaceWrapper) CompleteWorkerJob(ctx *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
 	}
+
+	ctx.Set(string(InternalBearerAuthScopes), []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.CompleteWorkerJob(ctx, id)
@@ -87,6 +91,8 @@ func (w *ServerInterfaceWrapper) FailWorkerJob(ctx *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
 	}
 
+	ctx.Set(string(InternalBearerAuthScopes), []string{})
+
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.FailWorkerJob(ctx, id)
 	return err
@@ -95,6 +101,8 @@ func (w *ServerInterfaceWrapper) FailWorkerJob(ctx *echo.Context) error {
 // PostEmbeddingsImages converts echo context to params.
 func (w *ServerInterfaceWrapper) PostEmbeddingsImages(ctx *echo.Context) error {
 	var err error
+
+	ctx.Set(string(ExternalBearerAuthScopes), []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.PostEmbeddingsImages(ctx)
@@ -112,6 +120,8 @@ func (w *ServerInterfaceWrapper) GetEmbeddingsJob(ctx *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
 	}
 
+	ctx.Set(string(ExternalBearerAuthScopes), []string{})
+
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetEmbeddingsJob(ctx, id)
 	return err
@@ -121,6 +131,8 @@ func (w *ServerInterfaceWrapper) GetEmbeddingsJob(ctx *echo.Context) error {
 func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx *echo.Context) error {
 	var err error
 
+	ctx.Set(string(ExternalBearerAuthScopes), []string{})
+
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.PostEmbeddingsMultimodal(ctx)
 	return err
@@ -129,6 +141,8 @@ func (w *ServerInterfaceWrapper) PostEmbeddingsMultimodal(ctx *echo.Context) err
 // PostEmbeddingsText converts echo context to params.
 func (w *ServerInterfaceWrapper) PostEmbeddingsText(ctx *echo.Context) error {
 	var err error
+
+	ctx.Set(string(ExternalBearerAuthScopes), []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.PostEmbeddingsText(ctx)
@@ -195,6 +209,15 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 type NoContentResponse struct {
 }
 
+type UnauthorizedResponseHeaders struct {
+	WWWAuthenticate *string
+}
+type UnauthorizedJSONResponse struct {
+	Body ErrorResponse
+
+	Headers UnauthorizedResponseHeaders
+}
+
 type ClaimWorkerJobRequestObject struct {
 	Body *ClaimWorkerJobJSONRequestBody
 }
@@ -243,6 +266,23 @@ func (response ClaimWorkerJob400JSONResponse) VisitClaimWorkerJobResponse(w http
 	return err
 }
 
+type ClaimWorkerJob401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ClaimWorkerJob401JSONResponse) VisitClaimWorkerJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ClaimWorkerJob500JSONResponse ErrorResponse
 
 func (response ClaimWorkerJob500JSONResponse) VisitClaimWorkerJobResponse(w http.ResponseWriter) error {
@@ -283,6 +323,23 @@ func (response CompleteWorkerJob400JSONResponse) VisitCompleteWorkerJobResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteWorkerJob401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CompleteWorkerJob401JSONResponse) VisitCompleteWorkerJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -340,6 +397,23 @@ func (response FailWorkerJob400JSONResponse) VisitFailWorkerJobResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FailWorkerJob401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response FailWorkerJob401JSONResponse) VisitFailWorkerJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -408,6 +482,23 @@ func (response PostEmbeddingsImages400JSONResponse) VisitPostEmbeddingsImagesRes
 	return err
 }
 
+type PostEmbeddingsImages401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PostEmbeddingsImages401JSONResponse) VisitPostEmbeddingsImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PostEmbeddingsImages500JSONResponse ErrorResponse
 
 func (response PostEmbeddingsImages500JSONResponse) VisitPostEmbeddingsImagesResponse(w http.ResponseWriter) error {
@@ -440,6 +531,23 @@ func (response GetEmbeddingsJob200JSONResponse) VisitGetEmbeddingsJobResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEmbeddingsJob401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetEmbeddingsJob401JSONResponse) VisitGetEmbeddingsJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -508,6 +616,23 @@ func (response PostEmbeddingsMultimodal400JSONResponse) VisitPostEmbeddingsMulti
 	return err
 }
 
+type PostEmbeddingsMultimodal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PostEmbeddingsMultimodal401JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PostEmbeddingsMultimodal500JSONResponse ErrorResponse
 
 func (response PostEmbeddingsMultimodal500JSONResponse) VisitPostEmbeddingsMultimodalResponse(w http.ResponseWriter) error {
@@ -554,6 +679,23 @@ func (response PostEmbeddingsText400JSONResponse) VisitPostEmbeddingsTextRespons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostEmbeddingsText401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PostEmbeddingsText401JSONResponse) VisitPostEmbeddingsTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.WWWAuthenticate != nil {
+		w.Header().Set("WWW-Authenticate", fmt.Sprint(*response.Headers.WWWAuthenticate))
+	}
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -847,50 +989,54 @@ func (sh *strictHandler) PostEmbeddingsText(ctx *echo.Context) error {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
