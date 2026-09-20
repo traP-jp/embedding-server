@@ -15,6 +15,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  swagger:
+    image: swaggerapi/swagger-ui:v5.32.1@sha256:74e37eb854b2cec5a8bcfdc4b0604a0354fbbf7209b68c3357d3221286bcb1dc
+    container_name: embedding-swagger
+    ports:
+      - "127.0.0.1:${SWAGGER_PORT:-8081}:8080"
+    environment:
+      SWAGGER_JSON: /openapi/openapi.yaml
+    volumes:
+      - type: bind
+        source: ./openapi.yaml
+        target: /openapi/openapi.yaml
+        read_only: true
+    restart: unless-stopped
+
   cloudflared:
     profiles:
       - tunnel
@@ -25,6 +39,8 @@ services:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       api:
+        condition: service_started
+      swagger:
         condition: service_started
     restart: unless-stopped
     read_only: true

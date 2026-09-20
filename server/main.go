@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/labstack/echo/v5"
+	middleware "github.com/labstack/echo/v5/middleware"
 
 	"embedding-server/api/api"
 	"embedding-server/api/config"
@@ -63,6 +65,15 @@ func main() {
 	go modalTrigger.RunReclaimLoop(ctx)
 
 	e := echo.New()
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{
+			"https://api-embeddings.mumumu6.net",
+			"http://localhost:8081",
+			"http://127.0.0.1:8081",
+		},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+	}))
 	if err := router.UseMiddleware(e, router.APIKeyAuthConfig{
 		ExternalAPIKey: cfg.APIKey,
 		InternalAPIKey: cfg.InternalAPIKey,

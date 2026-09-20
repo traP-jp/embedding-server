@@ -1,11 +1,24 @@
 # embedding-server
 
+## Swagger UI
+
+Swagger UIは専用コンテナで起動する。
+
+```text
+http://localhost:8081
+https://api-embeddings.mumumu6.net
+```
+
+Swagger UIからAPIを実行する場合も、公開APIの `API_KEY` が必要になる。
+
 ## Cloudflare Tunnel で公開する
 
 本番は Cloudflare Dashboard で remotely-managed tunnel を作成し、Published application を次のように設定する。
 
-- Public hostname: 利用する API hostname（例: `embedding-api.example.com`）
+- Public hostname: `embeddings.mumumu6.net`
 - Service URL: `http://api:8080`
+- Public hostname: `api-embeddings.mumumu6.net`
+- Service URL: `http://swagger:8080`
 
 Dashboard が発行した tunnel token をルート `.env` の `CLOUDFLARE_TUNNEL_TOKEN` に設定し、`tunnel` profile を有効にして起動する。
 `API_KEY` と `INTERNAL_API_KEY` には、それぞれ別の十分に長い乱数を設定する。
@@ -25,8 +38,8 @@ docker compose --profile tunnel up -d --build
 docker compose up -d --build
 ```
 
-`cloudflared` は Compose 内の `api` サービスへ接続するため、Service URL の host は
-`localhost` ではなく `api` にする。API の host 公開ポートは loopback のみに制限している。
+`cloudflared` はCompose内のサービスへ接続するため、Service URLのhostは
+`localhost`ではなく`api`または`swagger`にする。APIとSwaggerのhost公開ポートはloopbackのみに制限している。
 
 Modal の `API_BASE_URL` には上記の公開 HTTPS URL を設定する。
 

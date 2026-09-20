@@ -11,6 +11,8 @@ info:
     公開 API は API_KEY、/internal は INTERNAL_API_KEY を Bearer token として送る。
 
 servers:
+  - url: https://embeddings.mumumu6.net
+    description: 公開環境
   - url: http://localhost:8080
     description: 開発環境
 
