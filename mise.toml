@@ -68,7 +68,7 @@ uv run \
 description = "Modal worker を手動で1回実行する"
 run = """
 set -a
-source deploy/modal/.env
+. ./deploy/modal/.env
 set +a
 unset MODAL_ENABLE_SCHEDULE
 uv run \
@@ -81,7 +81,7 @@ uv run \
 description = "Modal worker を定期ポーリング付きでデプロイする（非推奨・空振り課金注意）"
 run = """
 set -a
-source deploy/modal/.env
+. ./deploy/modal/.env
 set +a
 MODAL_ENABLE_SCHEDULE=1 uv run \
     --project worker \
@@ -93,7 +93,7 @@ MODAL_ENABLE_SCHEDULE=1 uv run \
 description = "Modal worker を push 起動（run_batch）付きでデプロイする"
 run = """
 set -a
-source deploy/modal/.env
+. ./deploy/modal/.env
 set +a
 unset MODAL_ENABLE_SCHEDULE
 uv run \
