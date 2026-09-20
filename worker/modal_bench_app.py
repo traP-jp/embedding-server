@@ -75,6 +75,7 @@ def _bench_worker_env(*, max_memory_cuda: str, torch_dtype: str) -> dict[str, st
         "XDG_CACHE_HOME": f"{CACHE_VOLUME_DIR}/xdg",
         "HF_HOME": f"{CACHE_VOLUME_DIR}/huggingface",
         "TRANSFORMERS_CACHE": f"{CACHE_VOLUME_DIR}/huggingface/transformers",
+        "AUTH_DISABLED": "true",
         "WORKER_API_MODE": "url",
         "API_BASE_URL": "http://127.0.0.1:9",
         "S3_ENDPOINT_URL": "http://127.0.0.1:9",
@@ -267,6 +268,21 @@ def _run_benchmark(gpu: str) -> dict[str, Any]:
     rate = GPU_USD_PER_SEC.get(gpu)
     est_usd = None if rate is None else total_sec * rate
     est_jpy = None if est_usd is None else est_usd * JPY_PER_USD
+    import torch
+
+    cuda_memory: dict[str, float] = {}
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        mib = 1024**2
+        cuda_memory = {
+            "cuda_total_mib": round(total_bytes / mib, 1),
+            "cuda_free_mib": round(free_bytes / mib, 1),
+            "cuda_allocated_mib": round(torch.cuda.memory_allocated() / mib, 1),
+            "cuda_reserved_mib": round(torch.cuda.memory_reserved() / mib, 1),
+            "cuda_peak_allocated_mib": round(torch.cuda.max_memory_allocated() / mib, 1),
+            "cuda_peak_reserved_mib": round(torch.cuda.max_memory_reserved() / mib, 1),
+        }
     embed_secs = [row["embed_sec"] for row in per_image]
     ocr_secs = [row["ocr_sec"] for row in per_image]
     batch_secs = [row["embed_sec"] for row in per_batch]
@@ -294,6 +310,7 @@ def _run_benchmark(gpu: str) -> dict[str, Any]:
         "gpu_usd_per_sec": rate,
         "est_cost_usd": None if est_usd is None else round(est_usd, 4),
         "est_cost_jpy": None if est_jpy is None else round(est_jpy, 1),
+        **cuda_memory,
         "note": "est_cost は公開単価×コンテナ内 wall 秒の概算。確定値は modal billing report で確認。",
         "per_batch": per_batch,
         "per_image": per_image,
