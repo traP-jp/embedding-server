@@ -10,6 +10,10 @@ info:
     同一テキストの埋め込み結果はサーバー内部でキャッシュされる。
     公開 API は API_KEY、/internal は INTERNAL_API_KEY を Bearer token として送る。
 
+externalDocs:
+  description: ソースコード（GitHub）
+  url: https://github.com/traP-jp/embedding-server
+
 servers:
   - url: https://embeddings.mumumu6.net
     description: 公開環境
