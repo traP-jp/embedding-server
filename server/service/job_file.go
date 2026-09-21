@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -83,15 +85,26 @@ func (s *JobFileService) RemoveJobImages(ctx context.Context, objectKeys []strin
 		return nil
 	}
 
-	objects := make([]types.ObjectIdentifier, 0, len(objectKeys))
-	for _, key := range objectKeys {
-		objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
+	// S3 の 1 回のリクエストで指定できるキーは最大 1,000 件。
+	// HTTP 200 でもオブジェクト単位の削除失敗が返るため、1 件でも失敗したら
+	// DB のレコードを残す。
+	for keys := range slices.Chunk(objectKeys, 1000) {
+		objects := make([]types.ObjectIdentifier, 0, len(keys))
+		for _, key := range keys {
+			objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
+		}
+		out, err := s.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(s.bucket),
+			Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return err
+		}
+		if len(out.Errors) > 0 {
+			return fmt.Errorf("delete job images: %d object(s) failed (code=%s)", len(out.Errors), aws.ToString(out.Errors[0].Code))
+		}
 	}
-	_, err := s.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-		Bucket: aws.String(s.bucket),
-		Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
-	})
-	return err
+	return nil
 }
 
 func (s *JobFileService) objectKey(jobID uuid.UUID, index int) string {

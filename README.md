@@ -64,3 +64,32 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 ```
 
 認証を無効にする `AUTH_DISABLED=true` はローカル用であり、`APP_ENV=production` では起動を拒否する。
+
+## Webhook の受信
+
+Webhook は公開 IP に到達する HTTPS URL のみ利用できる。ループバック・プライベート IP・
+リンクローカルなどへの接続とリダイレクトは拒否する。DNS の検証は接続時にも行う。
+
+Webhook は `id` と `status`（`completed` または `failed`）だけを POST する。
+結果のベクトル・エラー本文・API キー・署名は送らない。専用の秘密値の設定も不要。
+
+```json
+{"id":"00000000-0000-0000-0000-000000000000","status":"completed"}
+```
+
+受信側では通知を結果取得の合図として扱い、自分が作成した job id であることを確認してから、
+設定済みの API サーバーの `GET /v1/embeddings/jobs/{id}` を `Authorization: Bearer <API_KEY>` 付きで呼ぶ。
+状態と結果は GET の応答を正として扱い、通知だけで完了・失敗を確定しない。
+重複通知に備えて job id 単位で処理を冪等にする。通知は一度だけ送るため、未着時は GET で確認できる。
+旧方式で通知先に送信した `API_KEY` はローテーションする。
+
+画像は 1 枚 20 MiB、1 リクエスト 4 枚まで。worker は展開前に 1 枚 2,000 万画素を上限として検査する。
+HTTP ボディは画像系 81 MiB、その他 1 MiB で制限する（multipart の付加情報を含む）。
+
+検証コマンド:
+
+```sh
+(cd server && go test -race ./...)
+# リポジトリルートから（worker の依存関係をインストール済みの場合）
+PYTHONPATH=worker worker/.venv/bin/python -m unittest discover -s worker/tests -v
+```

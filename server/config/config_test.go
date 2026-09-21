@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadRejectsEmptyAPIKeys(t *testing.T) {
@@ -60,6 +61,37 @@ func TestLoadTrimsAPIKeys(t *testing.T) {
 	}
 	if cfg.APIKey != "external-secret" || cfg.InternalAPIKey != "internal-secret" {
 		t.Fatalf("unexpected keys: external=%q internal=%q", cfg.APIKey, cfg.InternalAPIKey)
+	}
+}
+
+func TestLoadReadsNestedConfigAndDefaults(t *testing.T) {
+	setRequiredConfig(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Database.Host != "postgres" || cfg.Database.DBName != "embedding" {
+		t.Fatalf("unexpected database config: %+v", cfg.Database)
+	}
+	if cfg.S3.Endpoint != "https://s3.example.com" || cfg.S3.Prefix != "jobs" {
+		t.Fatalf("unexpected S3 config: %+v", cfg.S3)
+	}
+	if !cfg.Modal.Enable || cfg.Modal.BatchThreshold != 10 {
+		t.Fatalf("unexpected Modal defaults: %+v", cfg.Modal)
+	}
+	if cfg.Modal.MinInterval != 30*time.Second || cfg.Modal.TriggerTimeout != 15*time.Second {
+		t.Fatalf("unexpected Modal durations: %+v", cfg.Modal)
+	}
+}
+
+func TestLoadRejectsEmptyRequiredNestedConfig(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("POSTGRES_HOST", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "POSTGRES_HOST") {
+		t.Fatalf("expected POSTGRES_HOST validation error, got %v", err)
 	}
 }
 

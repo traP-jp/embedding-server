@@ -64,7 +64,7 @@ Go は pending 画像ジョブが `MODAL_BATCH_THRESHOLD`（既定 10）以上�
 
 認証キーは用途を分ける。
 
-- `API_KEY`: クライアント → Go（公開 API）、Go → webhook
+- `API_KEY`: クライアント → Go（公開 API）
 - `INTERNAL_API_KEY`: worker/Modal → Go（`/internal/...`）、Go → Modal `run_batch`
 
 キューが空なら Modal worker は待たずに終了する。

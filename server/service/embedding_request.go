@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"strings"
 	"unicode/utf8"
 )
@@ -104,11 +103,10 @@ func ReadEmbeddingInput(req EmbeddingInputRequest) (EmbeddingInput, error) {
 				break
 			}
 
-			switch http.DetectContentType(raw) {
-			case "image/png", "image/jpeg", "image/webp":
-				input.Images = append(input.Images, raw)
-			default:
+			if _, err := jobImageContentType(raw); err != nil {
 				partErr = ErrEmbeddingUnsupportedImageType
+			} else {
+				input.Images = append(input.Images, raw)
 			}
 		case "webhook_url":
 			b, err := io.ReadAll(io.LimitReader(part, 2048+1))

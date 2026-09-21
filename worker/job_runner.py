@@ -44,12 +44,11 @@ class JobMetrics:
         self.ocr_chars += len(text)
         self.ocr_sec += elapsed_sec
         log.debug(
-            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f preview=%r",
+            "job image ocr completed id=%s index=%s chars=%s elapsed_sec=%.3f",
             self.job_id,
             index,
             len(text),
             elapsed_sec,
-            _preview(text),
         )
 
     def set_images(self, images: int) -> None:
@@ -108,7 +107,13 @@ def claim_jobs(
         return []
     jobs: list[dict[str, Any]] = []
     for _ in range(max_jobs):
-        job = api.claim(kinds=kinds)
+        try:
+            job = api.claim(kinds=kinds)
+        except (httpx.HTTPError, ValueError):
+            if not jobs:
+                raise
+            log.warning("claim interrupted; processing %s already claimed jobs", len(jobs))
+            break
         if job is None:
             break
         jobs.append(job)
@@ -139,19 +144,13 @@ def run_jobs(
         # GPU 上では複数入力をまとめて process する。
         vectors = embedder.embed_many([job.item for job in prepared])
         embed_sec = time.perf_counter() - embed_started
+        if len(vectors) != len(prepared):
+            raise ValueError(f"embedding batch size mismatch: got {len(vectors)}, want {len(prepared)}")
     except Exception as e:
         # 推論全体が落ちたら、このバッチ分はすべて fail。
         for job in prepared:
             job.metrics.embed_sec = time.perf_counter() - job.metrics.started
             job.metrics.log_failed(e)
-            fail_safely(api, job.job_id)
-        return 0
-
-    if len(vectors) != len(prepared):
-        error = ValueError(f"embedding batch size mismatch: got {len(vectors)}, want {len(prepared)}")
-        for job in prepared:
-            job.metrics.embed_sec = embed_sec
-            job.metrics.log_failed(error)
             fail_safely(api, job.job_id)
         return 0
 
@@ -264,10 +263,3 @@ def _payload_text_chars(payload: dict[str, Any]) -> int:
     if isinstance(text, str):
         return len(text)
     return 0
-
-
-def _preview(text: str, limit: int = 120) -> str:
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."

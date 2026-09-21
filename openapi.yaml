@@ -91,7 +91,8 @@ paths:
       summary: 画像群の埋め込みジョブを受け付ける
       description: |
         ジョブを DB に作成してすぐ job id を返す（非同期）。
-        完了後は webhook_url があれば通知し、GET /v1/embeddings/jobs/{id} でも取得できる。
+        完了・失敗時は webhook_url があれば、WebhookNotification の本文で id と status のみを通知する。
+        状態・結果は認証付き GET /v1/embeddings/jobs/{id} で取得する。
       requestBody:
         required: true
         content:
@@ -108,6 +109,20 @@ paths:
                     $ref: "#/components/schemas/EmbeddingImageFile"
                 webhook_url:
                   $ref: "#/components/schemas/WebhookUrl"
+      callbacks:
+        jobStatus:
+          '{$request.body#/webhook_url}':
+            post:
+              summary: 埋め込みジョブの完了・失敗通知
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/WebhookNotification"
+              responses:
+                "204":
+                  description: 通知を受信した
       responses:
         "202":
           description: ジョブを受け付けた
@@ -138,6 +153,7 @@ paths:
       description: |
         text + images 用。画像を含む場合は非同期（202 + job id）。
         text のみの場合もこの endpoint では非同期にする（同期が必要なら /v1/embeddings/text を使う）。
+        完了・失敗時は webhook_url があれば、WebhookNotification の本文で id と status のみを通知する。
       requestBody:
         required: true
         content:
@@ -158,6 +174,20 @@ paths:
               anyOf:
                 - required: [text]
                 - required: [images]
+      callbacks:
+        jobStatus:
+          '{$request.body#/webhook_url}':
+            post:
+              summary: 埋め込みジョブの完了・失敗通知
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/WebhookNotification"
+              responses:
+                "204":
+                  description: 通知を受信した
       responses:
         "202":
           description: ジョブを受け付けた
@@ -434,7 +464,23 @@ components:
       type: string
       format: uri
       maxLength: 2048
-      description: ジョブ完了・失敗時に POST する URL（任意）
+      description: |
+        ジョブ完了・失敗時に WebhookNotification を POST する公開 HTTPS URL（任意）。
+        通知を合図に、既知の job id の状態・結果を認証付き GET /v1/embeddings/jobs/{id} で取得する。
+
+    WebhookNotification:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          $ref: "#/components/schemas/JobId"
+        status:
+          type: string
+          enum: [completed, failed]
+          description: ジョブの最終状態。Webhook は完了または失敗時だけ送信する。
+      example:
+        id: 00000000-0000-0000-0000-000000000000
+        status: completed
 
     EmbeddingText:
       type: string

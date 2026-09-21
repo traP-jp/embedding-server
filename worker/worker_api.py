@@ -49,6 +49,9 @@ class ApiClient:
         try:
             response = httpx.post(
                 self.base_url + path,
+                # Completion includes a webhook (up to 10 seconds) and cleanup.
+                timeout=httpx.Timeout(30.0, connect=5.0),
+                follow_redirects=False,
                 **request_kwargs,
             )
         except httpx.RequestError as e:

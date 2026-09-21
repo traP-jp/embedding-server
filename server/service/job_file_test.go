@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,10 +18,12 @@ import (
 )
 
 type fakeS3Server struct {
-	server     *httptest.Server
-	mu         sync.Mutex
-	objects    map[string][]byte
-	failDelete bool
+	server        *httptest.Server
+	mu            sync.Mutex
+	objects       map[string][]byte
+	failDelete    bool
+	partialDelete bool
+	deleteBatches []int
 }
 
 func newTestJobFileService(t *testing.T) *JobFileService {
@@ -75,6 +78,13 @@ func (f *fakeS3Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = xml.NewDecoder(r.Body).Decode(&req)
 		f.mu.Lock()
+		f.deleteBatches = append(f.deleteBatches, len(req.Objects))
+		if f.partialDelete {
+			f.mu.Unlock()
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Error><Key>failed</Key><Code>AccessDenied</Code></Error></DeleteResult>`))
+			return
+		}
 		for _, obj := range req.Objects {
 			delete(f.objects, obj.Key)
 		}
@@ -83,6 +93,26 @@ func (f *fakeS3Server) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>`))
 	default:
 		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}
+}
+
+func TestJobFileServiceRemoveBatchesAndDetectsPartialFailure(t *testing.T) {
+	svc, fake := newFakeS3JobFileService(t)
+	keys := make([]string, 1001)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("jobs/test/%d", i)
+	}
+	if err := svc.RemoveJobImages(context.Background(), keys); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	if len(fake.deleteBatches) != 2 || fake.deleteBatches[0] != 1000 || fake.deleteBatches[1] != 1 {
+		t.Errorf("unexpected delete batches: %v", fake.deleteBatches)
+	}
+	fake.partialDelete = true
+	fake.mu.Unlock()
+	if err := svc.RemoveJobImages(context.Background(), keys[:1]); err == nil {
+		t.Fatal("partial S3 failure was ignored")
 	}
 }
 

@@ -80,7 +80,7 @@ func (h *Handlers) CompleteWorkerJob(ctx context.Context, req api.CompleteWorker
 	}
 
 	h.notifier.Notify(req.Id)
-	h.embedding.NotifyWebhookCompleted(ctx, job, req.Body.Result)
+	h.embedding.NotifyWebhookCompleted(ctx, job)
 
 	// テキスト埋め込みジョブの結果はキャッシュする。
 	if job.Kind == model.JobKindText && strings.TrimSpace(job.Text) != "" {

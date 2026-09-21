@@ -21,6 +21,8 @@ class ApiClientAuthTest(unittest.TestCase):
             post.call_args.kwargs["headers"],
             {"Authorization": "Bearer internal-secret"},
         )
+        self.assertFalse(post.call_args.kwargs["follow_redirects"])
+        self.assertGreater(post.call_args.kwargs["timeout"].read, 10)
 
 
 if __name__ == "__main__":

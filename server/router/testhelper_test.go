@@ -40,6 +40,10 @@ type testSetup struct {
 }
 
 func setupTest(t *testing.T) *testSetup {
+	return setupTestWithAuth(t, APIKeyAuthConfig{Disabled: true})
+}
+
+func setupTestWithAuth(t *testing.T, auth APIKeyAuthConfig) *testSetup {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	jobMock := mock_repository.NewMockJobRepository(ctrl)
@@ -47,7 +51,7 @@ func setupTest(t *testing.T) *testSetup {
 	repo := &testCombinedRepo{job: jobMock, cache: cacheMock}
 
 	e := echo.New()
-	if err := UseMiddleware(e, APIKeyAuthConfig{Disabled: true}); err != nil {
+	if err := UseMiddleware(e, auth); err != nil {
 		t.Fatalf("configure middleware: %v", err)
 	}
 	notifier := service.NewLocalJobNotifier()

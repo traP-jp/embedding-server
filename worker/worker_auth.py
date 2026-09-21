@@ -14,4 +14,4 @@ def valid_bearer_token(authorization: str, expected: str) -> bool:
     scheme, separator, token = authorization.partition(" ")
     if separator == "" or scheme.lower() != "bearer":
         return False
-    return hmac.compare_digest(token.strip(), expected)
+    return hmac.compare_digest(token.strip().encode("utf-8"), expected.encode("utf-8"))

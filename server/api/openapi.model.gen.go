@@ -18,22 +18,40 @@ const (
 
 // Defines values for EmbeddingJobStatusStatus.
 const (
-	Completed  EmbeddingJobStatusStatus = "completed"
-	Failed     EmbeddingJobStatusStatus = "failed"
-	Pending    EmbeddingJobStatusStatus = "pending"
-	Processing EmbeddingJobStatusStatus = "processing"
+	EmbeddingJobStatusStatusCompleted  EmbeddingJobStatusStatus = "completed"
+	EmbeddingJobStatusStatusFailed     EmbeddingJobStatusStatus = "failed"
+	EmbeddingJobStatusStatusPending    EmbeddingJobStatusStatus = "pending"
+	EmbeddingJobStatusStatusProcessing EmbeddingJobStatusStatus = "processing"
 )
 
 // Valid indicates whether the value is a known member of the EmbeddingJobStatusStatus enum.
 func (e EmbeddingJobStatusStatus) Valid() bool {
 	switch e {
-	case Completed:
+	case EmbeddingJobStatusStatusCompleted:
 		return true
-	case Failed:
+	case EmbeddingJobStatusStatusFailed:
 		return true
-	case Pending:
+	case EmbeddingJobStatusStatusPending:
 		return true
-	case Processing:
+	case EmbeddingJobStatusStatusProcessing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebhookNotificationStatus.
+const (
+	WebhookNotificationStatusCompleted WebhookNotificationStatus = "completed"
+	WebhookNotificationStatusFailed    WebhookNotificationStatus = "failed"
+)
+
+// Valid indicates whether the value is a known member of the WebhookNotificationStatus enum.
+func (e WebhookNotificationStatus) Valid() bool {
+	switch e {
+	case WebhookNotificationStatusCompleted:
+		return true
+	case WebhookNotificationStatusFailed:
 		return true
 	default:
 		return false
@@ -113,7 +131,20 @@ type ErrorResponse struct {
 // JobId defines model for JobId.
 type JobId = openapi_types.UUID
 
-// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+// WebhookNotification defines model for WebhookNotification.
+type WebhookNotification struct {
+	Id JobId `json:"id"`
+
+	// Status ジョブの最終状態。Webhook は完了または失敗時だけ送信する。
+	Status WebhookNotificationStatus `json:"status"`
+}
+
+// WebhookNotificationStatus ジョブの最終状態。Webhook は完了または失敗時だけ送信する。
+type WebhookNotificationStatus string
+
+// WebhookUrl ジョブ完了・失敗時に WebhookNotification を POST する公開 HTTPS URL（任意）。
+// ベクトル・エラー本文・API キー・署名は送信しない。
+// 通知を合図に、既知の job id の状態・結果を認証付き GET /v1/embeddings/jobs/{id} で取得する。
 type WebhookUrl = string
 
 // WorkerJobKind text は画像なしジョブ、image は画像付きジョブ（multimodal 含む）
@@ -147,7 +178,9 @@ type CompleteWorkerJobJSONBody struct {
 type PostEmbeddingsImagesMultipartBody struct {
 	Images []EmbeddingImageFile `json:"images"`
 
-	// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+	// WebhookUrl ジョブ完了・失敗時に WebhookNotification を POST する公開 HTTPS URL（任意）。
+	// ベクトル・エラー本文・API キー・署名は送信しない。
+	// 通知を合図に、既知の job id の状態・結果を認証付き GET /v1/embeddings/jobs/{id} で取得する。
 	WebhookUrl *WebhookUrl `json:"webhook_url,omitempty"`
 }
 
@@ -159,7 +192,9 @@ type PostEmbeddingsMultimodalMultipartBody struct {
 	// 1〜8192 文字。空文字は不可。
 	Text *EmbeddingText `json:"text,omitempty"`
 
-	// WebhookUrl ジョブ完了・失敗時に POST する URL（任意）
+	// WebhookUrl ジョブ完了・失敗時に WebhookNotification を POST する公開 HTTPS URL（任意）。
+	// ベクトル・エラー本文・API キー・署名は送信しない。
+	// 通知を合図に、既知の job id の状態・結果を認証付き GET /v1/embeddings/jobs/{id} で取得する。
 	WebhookUrl *WebhookUrl `json:"webhook_url,omitempty"`
 	union      json.RawMessage
 }

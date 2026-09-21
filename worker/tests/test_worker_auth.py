@@ -14,6 +14,9 @@ class BearerTokenTest(unittest.TestCase):
         self.assertFalse(valid_bearer_token("Bearer external-secret", "internal-secret"))
         self.assertFalse(valid_bearer_token("Bearer anything", ""))
 
+    def test_non_ascii_token_is_rejected_without_crashing(self) -> None:
+        self.assertFalse(valid_bearer_token("Bearer 不正", "internal-secret"))
+
 
 if __name__ == "__main__":
     unittest.main()

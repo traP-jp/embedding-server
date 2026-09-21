@@ -61,7 +61,7 @@ func (s *EmbeddingService) CreateEmbedding(ctx context.Context, input EmbeddingI
 		raw, err := s.repo.GetTextCache(ctx, input.Text)
 		if err == nil {
 			var result api.EmbeddingResult
-			if err := json.Unmarshal(raw, &result); err == nil {
+			if err = json.Unmarshal(raw, &result); err == nil {
 				slog.Info("embedding cache hit", slog.Int("text_chars", len(input.Text)), slog.Int("vector_dim", len(result.Vector)))
 				return result, nil
 			}
@@ -126,14 +126,13 @@ func (s *EmbeddingService) GetJobStatus(ctx context.Context, id uuid.UUID) (api.
 	return out, nil
 }
 
-func (s *EmbeddingService) NotifyWebhookCompleted(ctx context.Context, job *repository.JobRecord, result api.EmbeddingResult) {
+func (s *EmbeddingService) NotifyWebhookCompleted(ctx context.Context, job *repository.JobRecord) {
 	if s.webhook == nil || job == nil {
 		return
 	}
-	s.webhook.Notify(ctx, job.WebhookURL, WebhookPayload{
-		ID:     job.ID,
-		Status: model.StatusCompleted,
-		Result: &result,
+	s.webhook.Notify(ctx, job.WebhookURL, api.WebhookNotification{
+		Id:     job.ID,
+		Status: api.WebhookNotificationStatusCompleted,
 	})
 }
 
@@ -141,10 +140,9 @@ func (s *EmbeddingService) NotifyWebhookFailed(ctx context.Context, job *reposit
 	if s.webhook == nil || job == nil {
 		return
 	}
-	s.webhook.Notify(ctx, job.WebhookURL, WebhookPayload{
-		ID:     job.ID,
-		Status: model.StatusFailed,
-		Error:  "job failed",
+	s.webhook.Notify(ctx, job.WebhookURL, api.WebhookNotification{
+		Id:     job.ID,
+		Status: api.WebhookNotificationStatusFailed,
 	})
 }
 

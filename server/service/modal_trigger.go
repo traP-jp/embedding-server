@@ -36,9 +36,14 @@ type ModalTrigger struct {
 
 func NewModalTrigger(cfg ModalTriggerConfig, repo modalTriggerRepo) *ModalTrigger {
 	return &ModalTrigger{
-		cfg:    cfg,
-		client: &http.Client{Timeout: cfg.TriggerTimeout},
-		repo:   repo,
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: cfg.TriggerTimeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		repo: repo,
 	}
 }
 

@@ -10,6 +10,7 @@ class Config(BaseSettings):
         env_ignore_empty=True,
         extra="ignore",
         frozen=True,
+        hide_input_in_errors=True,
     )
 
     auth_disabled: bool = Field(default=False, validation_alias="AUTH_DISABLED")

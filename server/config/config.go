@@ -5,62 +5,62 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kelseyhightower/envconfig"
+	env "github.com/caarlos0/env/v11"
 )
 
 type Config struct {
-	AppEnv       string `envconfig:"APP_ENV" required:"true"`
-	APIPort      string `envconfig:"API_PORT" required:"true"`
-	AuthDisabled bool   `envconfig:"AUTH_DISABLED" default:"false"`
-	// APIKey はクライアントからの公開 API 認証と webhook 送信に使う秘密。
-	APIKey string `envconfig:"API_KEY"`
+	AppEnv       string `env:"APP_ENV,required,notEmpty"`
+	APIPort      string `env:"API_PORT,required,notEmpty"`
+	AuthDisabled bool   `env:"AUTH_DISABLED" envDefault:"false"`
+	// APIKey はクライアントからの公開 API 認証に使う秘密。
+	APIKey string `env:"API_KEY"`
 	// InternalAPIKey は worker の /internal 認証と Modal 起動に使う秘密。
-	InternalAPIKey string   `envconfig:"INTERNAL_API_KEY"`
-	Database       DBConfig `envconfig:"POSTGRES"`
-	S3             S3Config `envconfig:"S3"`
+	InternalAPIKey string   `env:"INTERNAL_API_KEY"`
+	Database       DBConfig `envPrefix:"POSTGRES_"`
+	S3             S3Config `envPrefix:"S3_"`
 	Modal          ModalConfig
 }
 
 type ModalConfig struct {
 	// Enable が false のとき Modal 起動を行わない（URL があっても無効）。
-	Enable bool `envconfig:"MODAL_ENABLE" default:"true"`
+	Enable bool `env:"MODAL_ENABLE" envDefault:"true"`
 	// TriggerURL は Modal の run_batch HTTP endpoint（deploy 後に出る URL）。
-	TriggerURL string `envconfig:"MODAL_TRIGGER_URL"`
+	TriggerURL string `env:"MODAL_TRIGGER_URL"`
 	// BatchThreshold は Modal を起こす pending 画像ジョブ数の閾値。
 	// 推論の EMBEDDING_BATCH_SIZE とは別（こちらは「何件溜まったら起動するか」）。
 	// 起動後の Modal は text も claim する（画像が重いので起動し、起きている間に text も消化）。
-	BatchThreshold int `envconfig:"MODAL_BATCH_THRESHOLD" default:"10"`
+	BatchThreshold int `env:"MODAL_BATCH_THRESHOLD" envDefault:"10"`
 	// MinInterval は連続 trigger の最短間隔（二重起動防止）。
-	MinInterval time.Duration `envconfig:"MODAL_MIN_INTERVAL" default:"30s"`
+	MinInterval time.Duration `env:"MODAL_MIN_INTERVAL" envDefault:"30s"`
 	// TriggerTimeout は run_batch への HTTP POST のタイムアウト。
-	TriggerTimeout time.Duration `envconfig:"MODAL_TRIGGER_TIMEOUT" default:"15s"`
+	TriggerTimeout time.Duration `env:"MODAL_TRIGGER_TIMEOUT" envDefault:"15s"`
 	// ReclaimTTL は processing のまま放置されたジョブを pending に戻すまでの時間。
-	ReclaimTTL time.Duration `envconfig:"MODAL_RECLAIM_TTL" default:"30m"`
+	ReclaimTTL time.Duration `env:"MODAL_RECLAIM_TTL" envDefault:"30m"`
 	// ReclaimEvery は stale reclaim を回す間隔。
-	ReclaimEvery time.Duration `envconfig:"MODAL_RECLAIM_EVERY" default:"1m"`
+	ReclaimEvery time.Duration `env:"MODAL_RECLAIM_EVERY" envDefault:"1m"`
 }
 
 type DBConfig struct {
-	Host     string `envconfig:"HOST" required:"true"`
-	Port     string `envconfig:"PORT" required:"true"`
-	User     string `envconfig:"USER" required:"true"`
-	Password string `envconfig:"PASSWORD" required:"true"`
-	DBName   string `envconfig:"DB" required:"true"`
-	SSLMode  string `envconfig:"SSLMODE" required:"true"`
+	Host     string `env:"HOST,required,notEmpty"`
+	Port     string `env:"PORT,required,notEmpty"`
+	User     string `env:"USER,required,notEmpty"`
+	Password string `env:"PASSWORD,required,notEmpty"`
+	DBName   string `env:"DB,required,notEmpty"`
+	SSLMode  string `env:"SSLMODE,required,notEmpty"`
 }
 
 type S3Config struct {
-	Endpoint        string `envconfig:"ENDPOINT_URL" required:"true"`
-	Bucket          string `envconfig:"BUCKET" required:"true"`
-	Region          string `envconfig:"REGION" required:"true"`
-	AccessKeyID     string `envconfig:"ACCESS_KEY_ID" required:"true"`
-	SecretAccessKey string `envconfig:"SECRET_ACCESS_KEY" required:"true"`
-	Prefix          string `envconfig:"PREFIX" required:"true"`
+	Endpoint        string `env:"ENDPOINT_URL,required,notEmpty"`
+	Bucket          string `env:"BUCKET,required,notEmpty"`
+	Region          string `env:"REGION,required,notEmpty"`
+	AccessKeyID     string `env:"ACCESS_KEY_ID,required,notEmpty"`
+	SecretAccessKey string `env:"SECRET_ACCESS_KEY,required,notEmpty"`
+	Prefix          string `env:"PREFIX,required,notEmpty"`
 }
 
 func Load() (Config, error) {
 	var cfg Config
-	if err := envconfig.Process("", &cfg); err != nil {
+	if err := env.Parse(&cfg); err != nil {
 		return Config{}, fmt.Errorf("load config from environment: %w", err)
 	}
 	cfg.AppEnv = strings.TrimSpace(cfg.AppEnv)

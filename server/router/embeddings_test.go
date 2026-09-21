@@ -7,6 +7,7 @@ import (
 	"errors"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,45 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 )
+
+func TestGetEmbeddingsJobRequiresExternalAuthAndReturnsResult(t *testing.T) {
+	s := setupTestWithAuth(t, APIKeyAuthConfig{
+		ExternalAPIKey: "external-secret",
+		InternalAPIKey: "internal-secret",
+	})
+	id := uuid.New()
+	for _, key := range []string{"", "internal-secret", "external-secret"} {
+		t.Run("key="+key, func(t *testing.T) {
+			if key == "external-secret" {
+				s.job.EXPECT().GetJobState(gomock.Any(), id).Return(repository.JobState{
+					Status: model.StatusCompleted,
+					Result: json.RawMessage(`{"vector":[0.25,0.5]}`),
+				}, nil)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/v1/embeddings/jobs/"+id.String(), nil)
+			if key != "" {
+				req.Header.Set("Authorization", "Bearer "+key)
+			}
+			rec := httptest.NewRecorder()
+			s.echo.ServeHTTP(rec, req)
+			if key != "external-secret" {
+				assertStatus(t, rec, http.StatusUnauthorized)
+				return
+			}
+			assertStatus(t, rec, http.StatusOK)
+			var result api.EmbeddingJobStatus
+			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Id != id || string(result.Status) != "completed" || result.Result == nil {
+				t.Fatalf("unexpected job status: %+v", result)
+			}
+			if got := result.Result.Vector; len(got) != 2 || got[0] != 0.25 || got[1] != 0.5 {
+				t.Fatalf("unexpected vector: %v", got)
+			}
+		})
+	}
+}
 
 func TestPostEmbeddingsText_Success(t *testing.T) {
 	s := setupTest(t)

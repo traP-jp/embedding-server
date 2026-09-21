@@ -13,6 +13,32 @@ type modalTriggerRepoStub struct {
 	processing int
 }
 
+func TestModalTriggerDoesNotFollowRedirects(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("redirect target must not receive internal API key")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+	trigger := NewModalTrigger(ModalTriggerConfig{TriggerTimeout: time.Second}, nil)
+	req, err := http.NewRequest(http.MethodPost, source.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer internal-secret")
+	resp, err := trigger.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+}
+
 func (r modalTriggerRepoStub) CountPendingImageJobs(context.Context) (int, error) {
 	return r.pending, nil
 }
