@@ -305,23 +305,6 @@ def run_batch(request: fastapi.Request) -> dict[str, Any]:
     return {"status": "started", "call_id": call.object_id}
 
 
-if os.environ.get("MODAL_ENABLE_SCHEDULE") == "1":
-
-    @app.function(
-        image=worker_image,
-        gpu=DEFAULT_GPU,
-        volumes={CACHE_VOLUME_DIR: cache_volume},
-        env=worker_env,
-        secrets=[worker_secret],
-        timeout=60 * 60,
-        scaledown_window=DEFAULT_SCALEDOWN_WINDOW_SECONDS,
-        max_containers=1,
-        schedule=modal.Period(minutes=int(os.environ.get("MODAL_POLL_MINUTES", "1"))),
-    )
-    def poll_queue() -> int:
-        return _process_queue_impl(DEFAULT_MAX_JOBS_PER_RUN, DEFAULT_WORKER_RUN_SECONDS)
-
-
 @app.local_entrypoint()
 def run(max_jobs: int = DEFAULT_MAX_JOBS_PER_RUN) -> None:
     started = time.perf_counter()

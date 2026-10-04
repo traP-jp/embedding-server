@@ -14,8 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const syncEmbeddingWaitTimeout = 500 * time.Second
-
 // テキスト同期は部室 worker の待ち行列を塞ぐので、pending の text ジョブが多すぎたら受付拒否する。
 // 画像ジョブは非同期＋Modal バッチ前提のため、ここでは上限を掛けない。
 const maxPendingTextJobs = 30
@@ -36,6 +34,8 @@ type EmbeddingService struct {
 	jobFile  *JobFileService
 	webhook  *WebhookDispatcher
 	modal    *ModalTrigger
+
+	waitTimeout time.Duration
 }
 
 func NewEmbeddingService(
@@ -44,6 +44,7 @@ func NewEmbeddingService(
 	jobFile *JobFileService,
 	webhook *WebhookDispatcher,
 	modal *ModalTrigger,
+	waitTimeout time.Duration,
 ) *EmbeddingService {
 	return &EmbeddingService{
 		repo:     repo,
@@ -51,6 +52,8 @@ func NewEmbeddingService(
 		jobFile:  jobFile,
 		webhook:  webhook,
 		modal:    modal,
+
+		waitTimeout: waitTimeout,
 	}
 }
 
@@ -182,7 +185,7 @@ func (s *EmbeddingService) enqueueJob(ctx context.Context, input EmbeddingInput)
 }
 
 func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID) (api.EmbeddingResult, error) {
-	deadline := time.NewTimer(syncEmbeddingWaitTimeout)
+	deadline := time.NewTimer(s.waitTimeout)
 	defer deadline.Stop()
 
 	ch, unsubscribe := s.notifier.Subscribe(id)
@@ -201,7 +204,7 @@ func (s *EmbeddingService) waitEmbeddingResult(ctx context.Context, id uuid.UUID
 		slog.Warn("embedding wait context done", slog.String("job_id", id.String()), slog.Any("error", ctx.Err()))
 		return api.EmbeddingResult{}, ctx.Err()
 	case <-deadline.C:
-		slog.Warn("embedding wait timed out", slog.String("job_id", id.String()), slog.Duration("timeout", syncEmbeddingWaitTimeout))
+		slog.Warn("embedding wait timed out", slog.String("job_id", id.String()), slog.Duration("timeout", s.waitTimeout))
 		return api.EmbeddingResult{}, ErrEmbeddingTimeout
 	case <-ch:
 		return s.readEmbeddingResult(ctx, id)

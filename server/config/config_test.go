@@ -66,6 +66,7 @@ func TestLoadTrimsAPIKeys(t *testing.T) {
 
 func TestLoadReadsNestedConfigAndDefaults(t *testing.T) {
 	setRequiredConfig(t)
+	t.Setenv("EMBEDDING_WAIT_TIMEOUT", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -82,6 +83,21 @@ func TestLoadReadsNestedConfigAndDefaults(t *testing.T) {
 	}
 	if cfg.Modal.MinInterval != 30*time.Second || cfg.Modal.TriggerTimeout != 15*time.Second {
 		t.Fatalf("unexpected Modal durations: %+v", cfg.Modal)
+	}
+	if cfg.EmbeddingWaitTimeout != 500*time.Second {
+		t.Fatalf("unexpected embedding wait timeout: %v", cfg.EmbeddingWaitTimeout)
+	}
+}
+
+func TestLoadEmbeddingWaitTimeoutOverride(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("EMBEDDING_WAIT_TIMEOUT", "2m")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.EmbeddingWaitTimeout != 2*time.Minute {
+		t.Fatalf("unexpected embedding wait timeout: %v", cfg.EmbeddingWaitTimeout)
 	}
 }
 

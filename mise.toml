@@ -5,6 +5,19 @@ go = "1.26.2"
 uv = "0.11"
 oapi-codegen = "2.7.0"
 
+[tasks.test]
+description = "Goのraceテスト・静的検査とworkerのテストを実行する"
+depends = ["test-go", "test-worker"]
+
+[tasks.test-go]
+description = "Goの全パッケージのraceテストとgo vetを実行する"
+dir = "server"
+run = ["go test -race ./...", "go vet ./..."]
+
+[tasks.test-worker]
+description = "workerのテストを実行する"
+run = "uv run --no-sync --project worker python -m unittest discover -s worker/tests"
+
 [tasks.gogen]
 description = "Goファイルの生成を実行"
 dir = "server"
@@ -70,23 +83,10 @@ run = """
 set -a
 . ./deploy/modal/.env
 set +a
-unset MODAL_ENABLE_SCHEDULE
 uv run \
     --project worker \
     --extra deploy \
     modal run worker/modal_app.py
-"""
-
-[tasks.modal-deploy]
-description = "Modal worker を定期ポーリング付きでデプロイする（非推奨・空振り課金注意）"
-run = """
-set -a
-. ./deploy/modal/.env
-set +a
-MODAL_ENABLE_SCHEDULE=1 uv run \
-    --project worker \
-    --extra deploy \
-    modal deploy worker/modal_app.py
 """
 
 [tasks.modal-deploy-push]
@@ -95,7 +95,6 @@ run = """
 set -a
 . ./deploy/modal/.env
 set +a
-unset MODAL_ENABLE_SCHEDULE
 uv run \
     --project worker \
     --extra deploy \

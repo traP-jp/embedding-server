@@ -70,7 +70,7 @@ func run() error {
 		ReclaimTTL:     cfg.Modal.ReclaimTTL,
 		ReclaimEvery:   cfg.Modal.ReclaimEvery,
 	}, repo)
-	embedding := service.NewEmbeddingService(repo, notifier, jobFile, webhook, modalTrigger)
+	embedding := service.NewEmbeddingService(repo, notifier, jobFile, webhook, modalTrigger, cfg.EmbeddingWaitTimeout)
 	handlers := router.NewHandlers(repo, notifier, embedding, jobFile)
 	strictHandlers := api.NewStrictHandler(handlers, nil)
 

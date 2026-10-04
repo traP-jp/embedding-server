@@ -19,6 +19,9 @@ type Config struct {
 	Database       DBConfig `envPrefix:"POSTGRES_"`
 	S3             S3Config `envPrefix:"S3_"`
 	Modal          ModalConfig
+
+	// EmbeddingWaitTimeout は同期 embedding API が処理結果を待つ上限。
+	EmbeddingWaitTimeout time.Duration `env:"EMBEDDING_WAIT_TIMEOUT" envDefault:"500s"`
 }
 
 type ModalConfig struct {

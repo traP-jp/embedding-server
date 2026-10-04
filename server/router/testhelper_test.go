@@ -56,7 +56,7 @@ func setupTestWithAuth(t *testing.T, auth APIKeyAuthConfig) *testSetup {
 	}
 	notifier := service.NewLocalJobNotifier()
 	jobFile, fakeS3 := newFakeS3JobFileService(t)
-	embeddingSvc := service.NewEmbeddingService(repo, notifier, jobFile, nil, nil)
+	embeddingSvc := service.NewEmbeddingService(repo, notifier, jobFile, nil, nil, time.Minute)
 	handlers := NewHandlers(repo, notifier, embeddingSvc, jobFile)
 
 	api.RegisterHandlers(e, api.NewStrictHandler(handlers, nil))

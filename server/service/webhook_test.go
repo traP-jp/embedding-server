@@ -71,7 +71,7 @@ func TestEmbeddingServiceWebhookSendsOnlyJobIDAndStatus(t *testing.T) {
 				}
 				return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 			})
-			svc := NewEmbeddingService(nil, nil, nil, dispatcher, nil)
+			svc := newTestEmbeddingService(nil, nil, nil, dispatcher, nil)
 			if status == api.WebhookNotificationStatusCompleted {
 				svc.NotifyWebhookCompleted(context.Background(), job)
 			} else {
@@ -99,7 +99,7 @@ func TestWebhookDispatcherDoesNotFollowRedirects(t *testing.T) {
 
 func TestEmbeddingServiceRejectsInvalidWebhookBeforeCreatingJob(t *testing.T) {
 	dispatcher := NewWebhookDispatcher()
-	svc := NewEmbeddingService(nil, nil, nil, dispatcher, nil)
+	svc := newTestEmbeddingService(nil, nil, nil, dispatcher, nil)
 
 	_, err := svc.CreateAsyncEmbedding(context.Background(), EmbeddingInput{
 		Text:       "hello",

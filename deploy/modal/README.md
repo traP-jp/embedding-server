@@ -1,45 +1,41 @@
 # Modal worker デプロイ
 
-既存の Docker Compose と ROCm 用 Dockerfile はそのまま残す。Modal では
-`worker/modal_app.py`、CUDA 向けのイメージ、`embedding-worker` という名前の
-Modal Secret を使う。
+[開発者向けガイド](../../docs/wiki/development.md) · [利用者向けサービス Wiki](../../docs/wiki/README.md)
+
+本番では Go API が Modal worker の起動を依頼します。デプロイには `mise run modal-deploy-push` を使います。
 
 ## 前提
 
-- Go API と Postgres は Modal の外で起動している。
-- API は Modal から到達できる公開 HTTPS URL を持っている。
-- API と worker は同じ S3 互換バケットを参照している。
+- Go API と PostgreSQL が部室サーバーで起動している。
+- Modal から API の公開 HTTPS URL に接続できる。
+- API と worker が同じ R2 バケットを使う。
 
 ## 環境変数
 
-Modal はローカルの `.env` を自動では読まないため、`deploy/modal/.env` を Modal Secret として登録する。
-この Secret はモデル用ではなく、worker 実行環境に渡す環境変数一式。
+worker の環境変数は `deploy/modal/.env` に設定し、Modal Secret に登録します。
 
-`deploy/modal/.env.example` をコピーして `deploy/modal/.env` を作り、Modal から到達できる公開 URL を
-`API_BASE_URL` に設定する。
+`deploy/modal/.env` がない場合だけ [.env.example](.env.example) をコピーしてください。
+
+- `API_BASE_URL`：API の公開 URL を設定します。
+- R2 のバケット・認証情報：Go API と同じ値を設定します。
+- `INTERNAL_API_KEY`：Go API と同じ値を設定します。
 
 ```env
 WORKER_API_MODE=url
-API_BASE_URL=https://embedding-api.example.com
+API_BASE_URL=https://embeddings.mumumu6.net
 ```
 
-worker は `WORKER_API_MODE` で API の向き先を切り替える。
+worker は `WORKER_API_MODE` で API の接続先を切り替えます。
 
-- Docker Compose: `compose.yaml` が `WORKER_API_MODE=host` を指定し、`API_HOST/API_PORT` を使う。
+- Docker Compose: [compose.yaml](../../compose.yaml) が `WORKER_API_MODE=host` を指定し、`API_HOST/API_PORT` を使う。
 - Modal: Secret の `WORKER_API_MODE=url` により `API_BASE_URL` を使う。
 
-Docker Compose 用の `.env` と Modal 用の `deploy/modal/.env` は分けて管理する。
+Docker Compose 用の `.env` と Modal 用の `deploy/modal/.env` は分けて管理してください。
 
-Secret を作成または更新する。
+次のコマンドで Secret を登録・更新します。
 
 ```bash
 mise run modal-secret
-```
-
-スクリプトは次のコマンドをラップしているだけ。
-
-```bash
-modal secret create --force embedding-worker --from-dotenv deploy/modal/.env
 ```
 
 ## 手動実行
@@ -48,53 +44,57 @@ modal secret create --force embedding-worker --from-dotenv deploy/modal/.env
 mise run modal-run
 ```
 
-## Go からの push 起動（推奨）
+## 本番のデプロイと Go からの push 起動
 
-`modal deploy worker/modal_app.py`（`MODAL_ENABLE_SCHEDULE` なし）すると
-`run_batch` という HTTP endpoint が公開される。
+`mise run modal-deploy-push` は、Go API が起動依頼を送る HTTP エンドポイント `run_batch` を公開します。
 
-1. `deploy/modal/.env` にルートと同じ `INTERNAL_API_KEY` と `MODAL_GPU=T4` を入れる
-2. `mise run modal-secret` で Secret 更新
-3. `mise run modal-deploy-push` でデプロイ（定期ポーリングなし）
-4. 出た `run_batch` の URL を Go の `MODAL_TRIGGER_URL` に入れる
-5. Go 側で `MODAL_ENABLE=true` と `INTERNAL_API_KEY`（Modal と同じ値）を設定する
+1. `deploy/modal/.env` に Go API と同じ `INTERNAL_API_KEY`、`MODAL_GPU=T4`、`OCR_ENABLED=true` を設定します。
+2. `mise run modal-secret` で Secret を更新します。
+3. `mise run modal-deploy-push` でデプロイします。
+4. 表示された `run_batch` の URL を Go API の `MODAL_TRIGGER_URL` に設定します。
+5. Go API 側で `MODAL_ENABLE=true`、`MODAL_BATCH_THRESHOLD=10`、Modal と同じ `INTERNAL_API_KEY` を設定します。
+6. `mise run deploy-api` で Go API 側の設定を反映します。
 
-Go は pending 画像ジョブが `MODAL_BATCH_THRESHOLD`（既定 10）以上で
-この URL に `Authorization: Bearer <INTERNAL_API_KEY>` を付けて POST する。
+Go API は未処理の画像ジョブが `MODAL_BATCH_THRESHOLD`（既定10）以上になると、`run_batch` に POST します。認証ヘッダーは `Authorization: Bearer <INTERNAL_API_KEY>` です。
 
-認証キーは用途を分ける。
+件数はサービス全体の未処理の画像ジョブで数えます。複数画像を送った1回の POST も1ジョブです。
+
+10件待ちの理由は [画像 worker の起動条件](../../docs/wiki/README.md#画像-worker-の起動条件)、通知と結果取得は [Webhook の流れ](../../docs/wiki/README.md#画像の受付--webhook--get) を参照してください。
+
+認証キーは用途ごとに分けます。
 
 - `API_KEY`: クライアント → Go（公開 API）
 - `INTERNAL_API_KEY`: worker/Modal → Go（`/internal/...`）、Go → Modal `run_batch`
 
-キューが空なら Modal worker は待たずに終了する。
-
-## 定期ポーリングのデプロイ（任意・非推奨）
-
-空振り課金しやすいので、通常は push 起動を使う。
-
-```bash
-mise run modal-deploy
-```
+Modal worker はキューが空になると終了します。
 
 ## 実行時の調整項目
 
-Modal 用のデプロイ設定は、意図的に `compose.yaml` から分離している。
+Modal worker の設定は `deploy/modal/.env` で管理します。
 
-- `MODAL_GPU=T4` はデプロイ時の Modal GPU 種別を指定する（既定 T4）。
-- `MODAL_MAX_CONTAINERS=1` は同時 worker コンテナ数を制限する。
-- `MODAL_MAX_JOBS_PER_RUN=0` は 1 回の起動で処理する最大 job 数（**0 = キューが空になるまで**）。
-- `MODAL_WORKER_RUN_SECONDS=0` はソフトな時間上限（**0 = なし**。Modal の function timeout までドレイン）。
-- `MODAL_FUNCTION_TIMEOUT_SECONDS=10800` は `process_queue` の function timeout（既定 3h）。**deploy 時**に反映される。
-- `MODAL_SCALEDOWN_WINDOW_SECONDS=30` は GPU worker の warm 維持秒数（deploy 時）。
-- 起動ラッシュ時は `MODAL_MAX_CONTAINERS` を 2〜4 に上げると並列 claim できる。
-  閾値は「起こす条件」だけで、起こしたあとは溜まっている分をまとめて消化する。
-- Go は `processing` の画像ジョブがあるあいだは再 trigger しない（二重 spawn 防止）。
-- `MODAL_RECLAIM_TTL=30m` で古い `processing` を `pending` に戻し、残件があれば再起動する。
-- `INTERNAL_API_KEY` は `run_batch` と Go `/internal` の Bearer に使う。
-- function timeout を超えても残る場合は stale reclaim または閾値で起こす。
-- `OCR_ENABLED`、`MODEL_MAX_MEMORY_CUDA`、`QUANTIZATION` などの worker 設定は、
-  `deploy/modal/.env` 側で管理する。Modal で画像上限を上げる場合は `deploy/modal/.env` の
-  `EMBEDDING_MAX_PIXELS` を大きめにする。
-- `EMBEDDING_BATCH_SIZE` はモデル推論のバッチサイズ（未設定時は 1）。Modal の画像処理では
-  4〜8 を目安に Secret へ入れる。部室のテキスト向け worker は 1 のままでよい。
+| 変数・設定例 | 動作 |
+| --- | --- |
+| `MODAL_GPU=T4` | GPU の種類。既定は T4 |
+| `MODAL_MAX_CONTAINERS=1` | 同時に起動する worker コンテナの上限 |
+| `MODAL_MAX_JOBS_PER_RUN=0` | 1回の起動で処理するジョブ数の上限。0はキューが空になるまで処理 |
+| `MODAL_WORKER_RUN_SECONDS=0` | worker が次のジョブを取得し続ける時間の上限。0はこの制限なし |
+| `MODAL_FUNCTION_TIMEOUT_SECONDS=10800` | `process_queue` の実行時間の上限。既定は3時間 |
+| `MODAL_SCALEDOWN_WINDOW_SECONDS=30` | 処理後に GPU コンテナを保持する秒数 |
+| `EMBEDDING_BATCH_SIZE=4` | 1回の推論にまとめるジョブ数。コードの既定は1、常駐 worker も1 |
+| `EMBEDDING_MAX_PIXELS` | 推論用画像のリサイズ上限 |
+| `OCR_ENABLED=true` | yomitoku による文字認識を有効化 |
+| `MODEL_MAX_MEMORY_CUDA` / `QUANTIZATION` | モデルの GPU メモリ上限・量子化方式 |
+
+`MODAL_WORKER_RUN_SECONDS=0` でも、関数の実行時間には `MODAL_FUNCTION_TIMEOUT_SECONDS` の上限が適用されます。推論バッチや画像のリサイズ上限を増やす場合は、VRAM 使用量を実測してください。
+
+GPU の種類・関数タイムアウト・コンテナ上限などは再デプロイで反映します。`mise run modal-deploy-push` はローカルの `deploy/modal/.env` を読み込みます。OCR などの worker 設定は Secret も更新してください。
+
+### 処理が止まったジョブの回収
+
+Go API は `processing` の画像ジョブがある間、Modal の追加起動を見送ります。
+
+`MODAL_RECLAIM_TTL=30m` は Go API 側の設定です。最終更新から30分を超えた `processing` のジョブを `pending` に戻します。
+
+Modal がタイムアウトして処理中のジョブが残った場合も、回収の対象です。回収後に画像ジョブ数と起動間隔を確認し、起動条件を満たした場合に依頼します。
+
+起動後の worker は、起動条件の10件を下回ってもキューが空になるまで処理します。復旧時のログ確認と手動実行は [開発者向けガイド](../../docs/wiki/development.md#modal-の画像-worker) を参照してください。
