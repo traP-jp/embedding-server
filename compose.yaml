@@ -50,6 +50,7 @@ services:
   postgres:
     image: postgres:${POSTGRES_VERSION:-18.3}
     container_name: embedding-postgres
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
