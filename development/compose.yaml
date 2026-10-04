@@ -42,7 +42,7 @@ services:
     environment:
       WORKER_API_MODE: host
       EMBEDDING_WORKER_FAKE: "true"
-      FAKE_EMBEDDING_DIM: "1024"
+      FAKE_EMBEDDING_DIM: "4096"
       OCR_ENABLED: "false"
     depends_on:
       api:
